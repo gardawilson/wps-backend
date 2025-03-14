@@ -5,6 +5,8 @@ const bodyParser = require('body-parser');
 const { connectDb } = require('./db');  // Menghubungkan ke database
 const authRoutes = require('./routes/authRoutes');  // Rute untuk autentikasi
 const stockOpnameRoutes = require('./routes/stockOpnameRoutes');  // Rute untuk Stock Opname
+const labelDataRoutes = require('./routes/labelDataRoutes');  // Rute untuk Data Label
+
 
 const app = express();
 const port = process.env.PORT || 5000;  // Menggunakan port dari .env atau default 5000
@@ -21,6 +23,7 @@ app.use(bodyParser.json());
 // Menggunakan rute autentikasi dan stock opname
 app.use('/api', authRoutes);  // Rute autentikasi
 app.use('/api', stockOpnameRoutes);  // Rute stock opname
+app.use('/api', labelDataRoutes);  // Rute stock opname
 
 // Menjalankan server pada port yang sudah ditentukan
 app.listen(port, () => {
