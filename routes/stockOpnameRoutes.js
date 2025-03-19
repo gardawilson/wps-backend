@@ -445,8 +445,50 @@ router.post('/no-stock-opname/:noso/scan', verifyToken, async (req, res) => {
             await request.query(updateQuery);
             await request.query(insertQuery);
 
+
+            
+            if (!req.body.forceSave) {
+                // **Menambahkan pengecekan LastPrintDate dan DateCreate setelah insert dan update**
+                const getDateQuery = `
+                SELECT LastPrintDate, DateCreate
+                FROM ${tableH}
+                WHERE ${columnName} = @resultscanned;
+                `;
+                const dateResult = await request.query(getDateQuery);
+                const lastPrintDate = dateResult.recordset[0].LastPrintDate;
+                const dateCreate = dateResult.recordset[0].DateCreate;
+
+                // Pengecekan apakah LastPrintDate atau DateCreate sudah lebih dari 6 bulan
+                const sixMonthsAgo = new Date();
+                sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 3);
+
+                if (lastPrintDate === null || lastPrintDate === undefined) {
+                // Update LastPrintDate jika kosong atau null
+                const updateLastPrintDateQuery = `
+                    UPDATE ${tableH}
+                    SET LastPrintDate = DateCreate
+                    WHERE ${columnName} = @resultscanned;
+                    `;
+                    await request.query(updateLastPrintDateQuery);
+                    // Cek jika DateCreate sudah lebih dari 6 bulan
+                    const dateCreateObj = new Date(dateCreate);
+                    if (dateCreateObj <= sixMonthsAgo) {
+                        return res.status(200).json({ message: 'DateCreate lebih dari 6 bulan' });
+                    }
+                } else {
+                    // Cek jika LastPrintDate sudah lebih dari 6 bulan
+                    const lastPrintDateObj = new Date(lastPrintDate);
+                    if (lastPrintDateObj <= sixMonthsAgo) {
+                        return res.status(200).json({ message: 'LastPrintDate lebih dari 6 bulan' });
+                    }
+                }
+            }
+
+
             return res.status(201).json({ message: 'Data inserted successfully.' });
         }
+
+
 
     } catch (error) {
         console.error('Error inserting/updating data:', error);
