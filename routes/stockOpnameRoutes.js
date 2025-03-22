@@ -8,7 +8,16 @@ const formatDate = (date) => {
   return moment(date).format('DD MMM YYYY');
 };
 
+const WebSocket = require('ws');
+const wss = new WebSocket.Server({ port: 5001 }); // Pastikan port sesuai dan tidak bentrok dengan aplikasi lain
 
+// Listener untuk koneksi WebSocket
+wss.on('connection', (ws) => {
+    console.log('Client connected');
+    ws.on('message', (message) => {
+        console.log(`Received message: ${message}`);
+    });
+});
 
 // Route untuk mendapatkan Nomor Stock Opname
 router.get('/no-stock-opname', verifyToken, async (req, res) => {
@@ -402,10 +411,6 @@ router.post('/no-stock-opname/:noso/scan', verifyToken, async (req, res) => {
         }
 
         
-
-
-
-        
         // Cek apakah data sudah ada di tabel tertentu
         const checkQuery = `
             SELECT COUNT(*) AS count
@@ -445,6 +450,14 @@ router.post('/no-stock-opname/:noso/scan', verifyToken, async (req, res) => {
             await request.query(updateQuery);
             await request.query(insertQuery);
 
+            
+                    // Mengirim notifikasi via WebSocket
+                    wss.clients.forEach(client => {
+                        if (client.readyState === WebSocket.OPEN) {
+                            client.send(`Data ${noso} berhasil diinsert.`);
+                        }
+                    });
+
 
             
             if (!req.body.forceSave) {
@@ -460,7 +473,7 @@ router.post('/no-stock-opname/:noso/scan', verifyToken, async (req, res) => {
 
                 // Pengecekan apakah LastPrintDate atau DateCreate sudah lebih dari 6 bulan
                 const sixMonthsAgo = new Date();
-                sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 3);
+                sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
 
                 if (lastPrintDate === null || lastPrintDate === undefined) {
                 // Update LastPrintDate jika kosong atau null
@@ -484,10 +497,8 @@ router.post('/no-stock-opname/:noso/scan', verifyToken, async (req, res) => {
                 }
             }
 
-
             return res.status(201).json({ message: 'Data inserted successfully.' });
         }
-
 
 
     } catch (error) {
