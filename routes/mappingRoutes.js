@@ -271,8 +271,8 @@ const checkInOtherTables = async (request, resultscanned) => {
 
 
 
-// Route untuk input data ke dalam database berdasarkan No Stock Opname
-router.post('/label-list/mapping', verifyToken, async (req, res) => {
+// Route untuk pengecekan data berdasarkan No Stock Opname
+router.post('/label-list/check', verifyToken, async (req, res) => {
     const { resultscanned, idlokasi } = req.body;
     const { username } = req;  // Mengambil username dari request object
 
@@ -286,7 +286,7 @@ router.post('/label-list/mapping', verifyToken, async (req, res) => {
         const request = new sql.Request(pool);
         request.input('resultscanned', sql.VarChar, resultscanned);
         request.input('idlokasi', sql.VarChar, idlokasi);
-        request.input('username', sql.VarChar, username);  // Menambahkan username ke query
+        request.input('username', sql.VarChar, username);
 
         // Validasi pola resultscanned
         const validPattern = /^[ERSTUVWIA]\.\d{6}$/;
@@ -294,7 +294,6 @@ router.post('/label-list/mapping', verifyToken, async (req, res) => {
             return res.status(400).json({ message: 'Format harus berupa "Kode.xxxxxx"' });
         }
 
-        // Logika untuk memetakan resultscanned ke tabel dan melakukan pengecekan
         const firstChar = resultscanned.charAt(0).toUpperCase();
         const tableMap = {
             'E': { columnName: 'NoST', tableH: 'ST_h', isColumn: 'IsST' },
@@ -305,7 +304,6 @@ router.post('/label-list/mapping', verifyToken, async (req, res) => {
             'V': { columnName: 'NoCCAkhir', tableH: 'CCAkhir_h', isColumn: 'IsCCAkhir' },
             'W': { columnName: 'NoSanding', tableH: 'Sanding_h', isColumn: 'IsSanding' },
             'I': { columnName: 'NoBJ', tableH: 'BarangJadi_h', isColumn: 'IsBJ' },
-            // 'A': { tableName: 'StockOpname_Hasil_d_KayuBulat', columnName: 'NoKayuBulat', tableH: 'KayuBulat_h', isColumn: 'IsKB' }
         };
 
         const tableInfo = tableMap[firstChar];
@@ -321,42 +319,98 @@ router.post('/label-list/mapping', verifyToken, async (req, res) => {
             SELECT COUNT(*) AS count, MAX(dateusage) AS dateusage
             FROM ${tableH}
             WHERE ${columnName} = @resultscanned;
-    `;
+        `;
         const resultScannedCheck = await request.query(checkResultScannedQuery);
         const resultScannedCount = resultScannedCheck.recordset[0].count;
         const dateusage = resultScannedCheck.recordset[0].dateusage;
-        
+
         // Jika tidak ada data yang cocok, kembalikan pesan bahwa data tidak terdaftar
         if (resultScannedCount === 0) {
             return res.status(404).json({ message: 'Label tidak ada di sistem. Yakin ingin menyimpan?' });
         }
-        
-        // Tambahkan pengecekan untuk dateusage jika tidak null
-        if (dateusage !== null) {
 
+        // Cek untuk dateusage jika ada
+        if (dateusage !== null) {
             // Pengecekan pada tabel lain
             const otherTableCheck = await checkInOtherTables(request, resultscanned);
             if (otherTableCheck) {
                 return res.status(otherTableCheck.status).json({ message: otherTableCheck.message });
             }
-
-            // return res.status(409).json({ message: 'Label Sudah Di Nonaktifkan di Proses Produksi. Yakin ingin menyimpan?' });
         }
 
-            // Insert dan update data
+        return res.status(200).json({ message: 'Pengecekan berhasil, label ada di sistem.' });
+
+    } catch (error) {
+        console.error('Error checking data:', error);
+        res.status(500).json({ message: 'Failed to check data.', error: error.message });
+    }
+});
+
+
+router.post('/label-list/save-changes', verifyToken, async (req, res) => {
+    const { resultscannedList, idlokasi } = req.body;
+    const { username } = req;
+
+    if (!resultscannedList || resultscannedList.length === 0 || !idlokasi) {
+        return res.status(400).json({ message: 'Resultscanned list and idlokasi are required.' });
+    }
+
+    let pool;
+    try {
+        pool = await connectDb();
+        const request = new sql.Request(pool);
+        request.input('idlokasi', sql.VarChar, idlokasi);
+        request.input('username', sql.VarChar, username);
+
+        // Loop untuk memproses semua resultscanned
+        for (let i = 0; i < resultscannedList.length; i++) {
+            const resultscanned = resultscannedList[i];
+
+            // Buat parameter unik untuk setiap iterasi
+            const resultscannedParamName = `resultscanned_${i}`;
+
+            request.input(resultscannedParamName, sql.VarChar, resultscanned);
+
+            // Validasi pola resultscanned
+            const validPattern = /^[ERSTUVWIA]\.\d{6}$/;
+            if (!validPattern.test(resultscanned)) {
+                return res.status(400).json({ message: `Format untuk ${resultscanned} harus berupa "Kode.xxxxxx"` });
+            }
+
+            const firstChar = resultscanned.charAt(0).toUpperCase();
+            const tableMap = {
+                'E': { columnName: 'NoST', tableH: 'ST_h' },
+                'R': { columnName: 'NoS4S', tableH: 'S4S_h' },
+                'S': { columnName: 'NoFJ', tableH: 'FJ_h' },
+                'T': { columnName: 'NoMoulding', tableH: 'Moulding_h' },
+                'U': { columnName: 'NoLaminating', tableH: 'Laminating_h' },
+                'V': { columnName: 'NoCCAkhir', tableH: 'CCAkhir_h' },
+                'W': { columnName: 'NoSanding', tableH: 'Sanding_h' },
+                'I': { columnName: 'NoBJ', tableH: 'BarangJadi_h' },
+            };
+
+            const tableInfo = tableMap[firstChar];
+
+            if (!tableInfo) {
+                return res.status(400).json({ message: `Invalid starting character for ${resultscanned}.` });
+            }
+
+            const { columnName, tableH } = tableInfo;
+
+            // Insert logic untuk menyimpan data
             const updateQuery = `
                 UPDATE ${tableH}
                 SET IdLokasi = @idlokasi
-                WHERE ${columnName} = @resultscanned;
+                WHERE ${columnName} = @${resultscannedParamName};
             `;
-
             await request.query(updateQuery);
+        }
 
-            return res.status(201).json({ message: 'Data inserted successfully.' });
-   
+        return res.status(201).json({ message: 'Data berhasil disimpan.' });
+
     } catch (error) {
-        console.error('Error inserting/updating data:', error);
-        res.status(500).json({ message: 'Failed to insert/update data.', error: error.message });
+        console.error('Error inserting data:', error);
+        res.status(500).json({ message: 'Failed to insert data.', error: error.message });
     } finally {
         if (pool) {
             try {
@@ -367,6 +421,9 @@ router.post('/label-list/mapping', verifyToken, async (req, res) => {
         }
     }
 });
+
+
+
 
 
 module.exports = router;

@@ -13,7 +13,7 @@ const wss = new WebSocket.Server({ port: 5001 }); // Pastikan port sesuai dan ti
 
 // Listener untuk koneksi WebSocket
 wss.on('connection', (ws) => {
-    console.log('Client connected');
+    console.log('WPS Tablet Connected');
     ws.on('message', (message) => {
         console.log(`Received message: ${message}`);
     });
