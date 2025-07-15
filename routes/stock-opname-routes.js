@@ -4,9 +4,49 @@ const moment = require('moment');
 const { sql, connectDb } = require('../db');
 const router = express.Router();
 
+const formatDate = (date) => {
+    return moment(date).format('DD MMM YYYY');
+};
+
+const WebSocket = require('ws');
+const wss = new WebSocket.Server({ port: 5001 }); // Pastikan port sesuai dan tidak bentrok dengan aplikasi lain
+
+// Listener untuk koneksi WebSocket
+wss.on('connection', (ws) => {
+    console.log('WPS Tablet Connected');
+    ws.on('message', (message) => {
+        console.log(`Received message: ${message}`);
+    });
+});
+
+// Route untuk mendapatkan Nomor Stock Opname
+router.get('/no-stock-opname', verifyToken, async (req, res) => {
+    try {
+        await connectDb();
+
+        const result = await sql.query('SELECT [NoSO], [Tgl] FROM [dbo].[StockOpname_h] WHERE [Tgl] > (SELECT MAX(PeriodHarian) FROM [dbo].[MstTutupTransaksiHarian]) ORDER BY [NoSO] DESC');
+
+        if (!result.recordset || result.recordset.length === 0) {
+            return res.status(404).json({ message: 'Tidak ada Jadwal Stock Opname saat ini' });
+        }
+
+        const formattedData = result.recordset.map(item => ({
+            NoSO: item.NoSO,
+            Tgl: formatDate(item.Tgl)
+        }));
+
+        res.json(formattedData);
+    } catch (error) {
+        console.error('Error:', error.message);
+        res.status(500).json({ message: 'Internal Server Error' });
+    }
+});
+
+
 
 // Route untuk mendapatkan data Label berdasarkan No Stock Opname
-router.get('/label-list/', verifyToken, async (req, res) => {
+router.get('/no-stock-opname/:noso', verifyToken, async (req, res) => {
+    const { noso } = req.params;
     const page = parseInt(req.query.page) || 1;
     const pageSize = parseInt(req.query.pageSize) || 20;
     const filterBy = req.query.filterBy || null;
@@ -14,7 +54,7 @@ router.get('/label-list/', verifyToken, async (req, res) => {
     const offset = (page - 1) * pageSize;
     const { username } = req;  // Mengambil username dari request object
 
-    console.log("🔍 FilterBy:", filterBy, "| IdLokasi:", idlokasi, "Username", username, "| PAGE:", page, "| PZ", pageSize);
+    console.log(`[${new Date().toISOString()}] Stock opname - ${username} mengakses : "${filterBy}"`);
 
     if (page <= 0 || pageSize <= 0) {
         return res.status(400).json({ message: 'Page and pageSize must be positive numbers.' });
@@ -24,13 +64,14 @@ router.get('/label-list/', verifyToken, async (req, res) => {
     try {
         pool = await connectDb();
         const request = new sql.Request(pool);
+        request.input('noso', sql.VarChar, noso);
         request.input('username', sql.VarChar, username);  // Menambahkan username ke query
 
         if (idlokasi) request.input('idlokasi', sql.VarChar, idlokasi);
 
         // Ambil data lokasi
         const mstLokasiResult = await request.query('SELECT IdLokasi, Blok FROM MstLokasi WHERE Enable = 1');
-        
+
         if (!mstLokasiResult.recordset || mstLokasiResult.recordset.length === 0) {
             return res.status(404).json({ message: 'Data MstLokasi tidak ditemukan' });
         }
@@ -40,31 +81,35 @@ router.get('/label-list/', verifyToken, async (req, res) => {
 
         function createQuery(tableName, columnName, labelType) {
             return `
-                SELECT d.${columnName} AS CombinedLabel, '${labelType}' AS LabelType, d.IdLokasi AS LabelLocation
+                SELECT d.${columnName} AS CombinedLabel, '${labelType}' AS LabelType, d.IdLokasi AS LabelLocation, ISNULL(d.DateTimeScan, '1900-01-01') AS DateTimeScan
                 FROM ${tableName} d
-                WHERE DateUsage IS NULL
+                WHERE d.NoSO = @noso
                 ${idlokasi && idlokasi !== 'all' ? "AND d.IdLokasi = @idlokasi" : ""}
+                AND d.UserID = @username
+
             `;
         }
 
         function createTotalQuery(tableName, columnName) {
             return `
                 SELECT COUNT(*) AS total FROM ${tableName} d
-                WHERE DateUsage IS NULL
+                WHERE d.NoSO = @noso
                 ${idlokasi && idlokasi !== 'all' ? "AND d.IdLokasi = @idlokasi" : ""}
+                AND d.UserID = @username
+
             `;
         }
 
         if (filterBy && filterBy !== 'all') {
             const filterMap = {
-                'st': { table: 'ST_h', column: 'NoST', type: 'Sawn Timber' },
-                'sanding': { table: 'Sanding_h', column: 'NoSanding', type: 'Sanding' },
-                's4s': { table: 'S4S_h', column: 'NoS4S', type: 'S4S' },
-                'moulding': { table: 'Moulding_h', column: 'NoMoulding', type: 'Moulding' },
-                'laminating': { table: 'Laminating_h', column: 'NoLaminating', type: 'Laminating' },
-                'fj': { table: 'FJ_h', column: 'NoFJ', type: 'Finger Joint' },
-                'ccakhir': { table: 'CCAkhir_h', column: 'NoCCAkhir', type: 'CC Akhir' },
-                'bj': { table: 'BarangJadi_h', column: 'NoBJ', type: 'Barang Jadi' },
+                'st': { table: 'StockOpname_Hasil_d_ST', column: 'NoST', type: 'Sawn Timber' },
+                'sanding': { table: 'StockOpname_Hasil_d_Sanding', column: 'NoSanding', type: 'Sanding' },
+                's4s': { table: 'StockOpname_Hasil_d_S4S', column: 'NoS4S', type: 'S4S' },
+                'moulding': { table: 'StockOpname_Hasil_d_Moulding', column: 'NoMoulding', type: 'Moulding' },
+                'laminating': { table: 'StockOpname_Hasil_d_Laminating', column: 'NoLaminating', type: 'Laminating' },
+                'fj': { table: 'StockOpname_Hasil_d_FJ', column: 'NoFJ', type: 'Finger Joint' },
+                'ccakhir': { table: 'StockOpname_Hasil_d_CCAkhir', column: 'NoCCAkhir', type: 'CC Akhir' },
+                'bj': { table: 'StockOpname_Hasil_d_BJ', column: 'NoBJ', type: 'Barang Jadi' },
             };
 
             const selectedFilter = filterMap[filterBy];
@@ -74,53 +119,51 @@ router.get('/label-list/', verifyToken, async (req, res) => {
 
             query = `
                 ${createQuery(selectedFilter.table, selectedFilter.column, selectedFilter.type)}
-                ORDER BY CombinedLabel
+                ORDER BY DateTimeScan DESC
                 OFFSET ${offset} ROWS FETCH NEXT ${pageSize} ROWS ONLY;
-
             `;
             totalCountQuery = createTotalQuery(selectedFilter.table, selectedFilter.column);
         } else {
             // Jika filterBy NULL atau "all", ambil semua data
             query = `
-                SELECT CombinedLabel, LabelType, LabelLocation 
-                FROM (
-                    ${createQuery('ST_h', 'NoST', 'Sawn Timber')}
+                SELECT CombinedLabel, LabelType, LabelLocation, DateTimeScan FROM (
+                    ${createQuery('StockOpname_Hasil_d_ST', 'NoST', 'Sawn Timber')}
                     UNION ALL
-                    ${createQuery('S4S_h', 'NoS4S', 'S4S')}
+                    ${createQuery('StockOpname_Hasil_d_Sanding', 'NoSanding', 'Sanding')}
                     UNION ALL
-                    ${createQuery('FJ_h', 'NoFJ', 'Finger Joint')}
+                    ${createQuery('StockOpname_Hasil_d_S4S', 'NoS4S', 'S4S')}
                     UNION ALL
-                    ${createQuery('Moulding_h', 'NoMoulding', 'Moulding')}
+                    ${createQuery('StockOpname_Hasil_d_Moulding', 'NoMoulding', 'Moulding')}
                     UNION ALL
-                    ${createQuery('Laminating_h', 'NoLaminating', 'Laminating')}
+                    ${createQuery('StockOpname_Hasil_d_Laminating', 'NoLaminating', 'Laminating')}
                     UNION ALL
-                    ${createQuery('CCAkhir_h', 'NoCCAkhir', 'CC Akhir')}
+                    ${createQuery('StockOpname_Hasil_d_FJ', 'NoFJ', 'Finger Joint')}
                     UNION ALL
-                    ${createQuery('Sanding_h', 'NoSanding', 'Sanding')}
+                    ${createQuery('StockOpname_Hasil_d_CCAkhir', 'NoCCAkhir', 'CC Akhir')}
                     UNION ALL
-                    ${createQuery('BarangJadi_h', 'NoBJ', 'Barang Jadi')}
+                    ${createQuery('StockOpname_Hasil_d_BJ', 'NoBJ', 'Barang Jadi')}
                 ) AS subquery
-                ORDER BY CombinedLabel 
+                ORDER BY DateTimeScan DESC
                 OFFSET ${offset} ROWS FETCH NEXT ${pageSize} ROWS ONLY;
             `;
 
             totalCountQuery = `
                 SELECT SUM(total) AS total FROM (
-                    ${createTotalQuery('ST_h', 'NoST')}
+                    ${createTotalQuery('StockOpname_Hasil_d_ST', 'NoST')}
                     UNION ALL
-                    ${createTotalQuery('Sanding_h', 'NoSanding')}
+                    ${createTotalQuery('StockOpname_Hasil_d_Sanding', 'NoSanding')}
                     UNION ALL
-                    ${createTotalQuery('S4S_h', 'NoS4S')}
+                    ${createTotalQuery('StockOpname_Hasil_d_S4S', 'NoS4S')}
                     UNION ALL
-                    ${createTotalQuery('Moulding_h', 'NoMoulding')}
+                    ${createTotalQuery('StockOpname_Hasil_d_Moulding', 'NoMoulding')}
                     UNION ALL
-                    ${createTotalQuery('Laminating_h', 'NoLaminating')}
+                    ${createTotalQuery('StockOpname_Hasil_d_Laminating', 'NoLaminating')}
                     UNION ALL
-                    ${createTotalQuery('FJ_h', 'NoFJ')}
+                    ${createTotalQuery('StockOpname_Hasil_d_FJ', 'NoFJ')}
                     UNION ALL
-                    ${createTotalQuery('CCAkhir_h', 'NoCCAkhir')}
+                    ${createTotalQuery('StockOpname_Hasil_d_CCAkhir', 'NoCCAkhir')}
                     UNION ALL
-                    ${createTotalQuery('BarangJadi_h', 'NoBJ')}
+                    ${createTotalQuery('StockOpname_Hasil_d_BJ', 'NoBJ')}
                 ) AS total_counts;
             `;
         }
@@ -152,8 +195,8 @@ router.get('/label-list/', verifyToken, async (req, res) => {
 const checkInOtherTables = async (request, resultscanned) => {
     // Menentukan tipe tabel berdasarkan tipe resultscanned
     let tablesToCheck = [];
-    let columnToSearch = ''; 
-    
+    let columnToSearch = '';
+
     // Menentukan tabel dan kolom yang relevan berdasarkan kode pertama pada resultscanned
     const firstChar = resultscanned.charAt(0).toUpperCase();
 
@@ -186,7 +229,7 @@ const checkInOtherTables = async (request, resultscanned) => {
             { tableName: "AdjustmentInputFJ", column: "NoAdjustment" },
             { tableName: "BongkarSusunInputFJ", column: "NoBongkarSusun" }
         ];
-        columnToSearch = 'NoFJ'; 
+        columnToSearch = 'NoFJ';
 
     } else if (firstChar === 'T') {
         tablesToCheck = [
@@ -220,7 +263,7 @@ const checkInOtherTables = async (request, resultscanned) => {
             { tableName: "AdjustmentInputCCAkhir", column: "NoAdjustment" },
             { tableName: "BongkarSusunInputCCAkhir", column: "NoBongkarSusun" }
         ];
-        columnToSearch = 'NoCCAkhir'; 
+        columnToSearch = 'NoCCAkhir';
 
     } else if (firstChar === 'W') {
         tablesToCheck = [
@@ -229,9 +272,9 @@ const checkInOtherTables = async (request, resultscanned) => {
             { tableName: "AdjustmentInputSanding", column: "NoAdjustment" },
             { tableName: "BongkarSusunInputSanding", column: "NoBongkarSusun" }
         ];
-        columnToSearch = 'NoSanding'; 
+        columnToSearch = 'NoSanding';
 
-    }  else if (firstChar === 'I') {
+    } else if (firstChar === 'I') {
         tablesToCheck = [
             { tableName: "MouldingProduksiInputBarangJadi", column: "NoProduksi" },
             { tableName: "LaminatingProduksiInputBarangJadi", column: "NoProduksi" },
@@ -239,7 +282,7 @@ const checkInOtherTables = async (request, resultscanned) => {
             { tableName: "PackingProduksiInputBarangJadi", column: "NoProduksi" },
             { tableName: "BongkarSusunInputBarangJadi", column: "NoBongkarSusun" }
         ];
-        columnToSearch = 'NoBJ'; 
+        columnToSearch = 'NoBJ';
 
     } else {
         // Jika resultscanned bukan 'E' atau 'R', bisa menambahkan logika lain atau handling error
@@ -253,13 +296,13 @@ const checkInOtherTables = async (request, resultscanned) => {
             FROM ${table.tableName}
             WHERE ${columnToSearch} = @resultscanned;
         `;
-        
+
         const resultCheck = await request.query(checkQuery);
 
         if (resultCheck.recordset.length > 0) {
             const value = resultCheck.recordset[0][table.column]; // Ambil nilai kolom yang sesuai
-            return { 
-                message: `Label sudah di Proses pada Nomor ${value}. Yakin ingin menyimpan?`, 
+            return {
+                message: `Label sudah di Proses pada Nomor ${value}. Yakin ingin menyimpan?`,
                 status: 409,
                 value: value // Kembalikan nilai kolom yang ditemukan
             };
@@ -271,22 +314,24 @@ const checkInOtherTables = async (request, resultscanned) => {
 
 
 
-// Route untuk pengecekan data berdasarkan No Stock Opname
-router.post('/label-list/check', verifyToken, async (req, res) => {
+// Route untuk input data ke dalam database berdasarkan No Stock Opname
+router.post('/no-stock-opname/:noso/scan', verifyToken, async (req, res) => {
+    const { noso } = req.params;
     const { resultscanned, idlokasi } = req.body;
     const { username } = req;  // Mengambil username dari request object
 
-    if (!resultscanned || !idlokasi) {
-        return res.status(400).json({ message: 'Resultscanned, and idlokasi are required.' });
+    if (!noso || !resultscanned || !idlokasi) {
+        return res.status(400).json({ message: 'NoSO, resultscanned, and idlokasi are required.' });
     }
 
     let pool;
     try {
         pool = await connectDb();
         const request = new sql.Request(pool);
+        request.input('noso', sql.VarChar, noso);
         request.input('resultscanned', sql.VarChar, resultscanned);
         request.input('idlokasi', sql.VarChar, idlokasi);
-        request.input('username', sql.VarChar, username);
+        request.input('username', sql.VarChar, username);  // Menambahkan username ke query
 
         // Validasi pola resultscanned
         const validPattern = /^[ERSTUVWIA]\.\d{6}$/;
@@ -294,16 +339,18 @@ router.post('/label-list/check', verifyToken, async (req, res) => {
             return res.status(400).json({ message: 'Format harus berupa "Kode.xxxxxx"' });
         }
 
+        // Logika untuk memetakan resultscanned ke tabel dan melakukan pengecekan
         const firstChar = resultscanned.charAt(0).toUpperCase();
         const tableMap = {
-            'E': { columnName: 'NoST', tableH: 'ST_h', isColumn: 'IsST' },
-            'R': { columnName: 'NoS4S', tableH: 'S4S_h', isColumn: 'IsS4S' },
-            'S': { columnName: 'NoFJ', tableH: 'FJ_h', isColumn: 'IsFJ' },
-            'T': { columnName: 'NoMoulding', tableH: 'Moulding_h', isColumn: 'IsMoulding' },
-            'U': { columnName: 'NoLaminating', tableH: 'Laminating_h', isColumn: 'IsLaminating' },
-            'V': { columnName: 'NoCCAkhir', tableH: 'CCAkhir_h', isColumn: 'IsCCAkhir' },
-            'W': { columnName: 'NoSanding', tableH: 'Sanding_h', isColumn: 'IsSanding' },
-            'I': { columnName: 'NoBJ', tableH: 'BarangJadi_h', isColumn: 'IsBJ' },
+            'E': { tableName: 'StockOpname_Hasil_d_ST', columnName: 'NoST', tableH: 'ST_h', isColumn: 'IsST' },
+            'R': { tableName: 'StockOpname_Hasil_d_S4S', columnName: 'NoS4S', tableH: 'S4S_h', isColumn: 'IsS4S' },
+            'S': { tableName: 'StockOpname_Hasil_d_FJ', columnName: 'NoFJ', tableH: 'FJ_h', isColumn: 'IsFJ' },
+            'T': { tableName: 'StockOpname_Hasil_d_Moulding', columnName: 'NoMoulding', tableH: 'Moulding_h', isColumn: 'IsMoulding' },
+            'U': { tableName: 'StockOpname_Hasil_d_Laminating', columnName: 'NoLaminating', tableH: 'Laminating_h', isColumn: 'IsLaminating' },
+            'V': { tableName: 'StockOpname_Hasil_d_CCAkhir', columnName: 'NoCCAkhir', tableH: 'CCAkhir_h', isColumn: 'IsCCAkhir' },
+            'W': { tableName: 'StockOpname_Hasil_d_Sanding', columnName: 'NoSanding', tableH: 'Sanding_h', isColumn: 'IsSanding' },
+            'I': { tableName: 'StockOpname_Hasil_d_BJ', columnName: 'NoBJ', tableH: 'BarangJadi_h', isColumn: 'IsBJ' },
+            // 'A': { tableName: 'StockOpname_Hasil_d_KayuBulat', columnName: 'NoKayuBulat', tableH: 'KayuBulat_h', isColumn: 'IsKB' }
         };
 
         const tableInfo = tableMap[firstChar];
@@ -312,105 +359,153 @@ router.post('/label-list/check', verifyToken, async (req, res) => {
             return res.status(400).json({ message: 'Invalid starting character for resultscanned.' });
         }
 
-        const { columnName, tableH, isColumn } = tableInfo;
+        const { tableName, columnName, tableH, isColumn } = tableInfo;
+
+        // Pengecekan Column data dari StockOpname_h
+        const checkHeaderQuery = `
+            SELECT ${isColumn}
+            FROM StockOpname_h
+            WHERE NoSO = @noso;
+        `;
+
+        const headerResult = await request.query(checkHeaderQuery);
+
+        if (headerResult.recordset.length === 0) {
+            return res.status(404).json({ message: 'Column not found in StockOpname_h.' });
+        }
+
+        const isColumnEnabled = headerResult.recordset[0][isColumn];
+
+        // Validasi apakah input diperbolehkan
+        if (!isColumnEnabled) {
+            return res.status(403).json({ message: `${columnName} Tidak di Aktifkan!` });
+        }
+
+
 
         // **Pengecekan apakah resultscanned ada di table yang sesuai**
         const checkResultScannedQuery = `
             SELECT COUNT(*) AS count, MAX(dateusage) AS dateusage
             FROM ${tableH}
             WHERE ${columnName} = @resultscanned;
-        `;
+    `;
         const resultScannedCheck = await request.query(checkResultScannedQuery);
         const resultScannedCount = resultScannedCheck.recordset[0].count;
         const dateusage = resultScannedCheck.recordset[0].dateusage;
 
         // Jika tidak ada data yang cocok, kembalikan pesan bahwa data tidak terdaftar
-        if (resultScannedCount === 0) {
+        if (resultScannedCount === 0 && !req.body.forceSave) {
             return res.status(404).json({ message: 'Label tidak ada di sistem. Yakin ingin menyimpan?' });
         }
 
-        // Cek untuk dateusage jika ada
-        if (dateusage !== null) {
+        // Tambahkan pengecekan untuk dateusage jika tidak null
+        if (dateusage !== null && !req.body.forceSave) {
+
             // Pengecekan pada tabel lain
             const otherTableCheck = await checkInOtherTables(request, resultscanned);
             if (otherTableCheck) {
                 return res.status(otherTableCheck.status).json({ message: otherTableCheck.message });
             }
+
+            // return res.status(409).json({ message: 'Label Sudah Di Nonaktifkan di Proses Produksi. Yakin ingin menyimpan?' });
         }
 
-        return res.status(200).json({ message: 'Pengecekan berhasil, label ada di sistem.' });
 
-    } catch (error) {
-        console.error('Error checking data:', error);
-        res.status(500).json({ message: 'Failed to check data.', error: error.message });
-    }
-});
+        // Cek apakah data sudah ada di tabel tertentu
+        const checkQuery = `
+            SELECT COUNT(*) AS count
+            FROM ${tableName}
+            WHERE NoSO = @noso AND ${columnName} = @resultscanned;
+        `;
 
+        const duplicateResult = await request.query(checkQuery);
+        const count = duplicateResult.recordset[0].count;
 
-router.post('/label-list/save-changes', verifyToken, async (req, res) => {
-    const { resultscannedList, idlokasi } = req.body;
-    const { username } = req;
+        if (count > 0) {
 
-    if (!resultscannedList || resultscannedList.length === 0 || !idlokasi) {
-        return res.status(400).json({ message: 'Resultscanned list and idlokasi are required.' });
-    }
+            const checkDuplicateLocation = `
+            SELECT IdLokasi
+            FROM ${tableName}
+            WHERE NoSO = @noso AND ${columnName} = @resultscanned;
+        `;
 
-    let pool;
-    try {
-        pool = await connectDb();
-        const request = new sql.Request(pool);
-        request.input('idlokasi', sql.VarChar, idlokasi);
-        request.input('username', sql.VarChar, username);
+            const duplicateLocation = await request.query(checkDuplicateLocation);
+            const existingIdLokasi = duplicateLocation.recordset[0].IdLokasi;
 
-        // Loop untuk memproses semua resultscanned
-        for (let i = 0; i < resultscannedList.length; i++) {
-            const resultscanned = resultscannedList[i];
+            return res.status(422).json({ message: `Data Duplikat! Label Telah Terdaftar di ${existingIdLokasi}` });
 
-            // Buat parameter unik untuk setiap iterasi
-            const resultscannedParamName = `resultscanned_${i}`;
-
-            request.input(resultscannedParamName, sql.VarChar, resultscanned);
-
-            // Validasi pola resultscanned
-            const validPattern = /^[ERSTUVWIA]\.\d{6}$/;
-            if (!validPattern.test(resultscanned)) {
-                return res.status(400).json({ message: `Format untuk ${resultscanned} harus berupa "Kode.xxxxxx"` });
-            }
-
-            const firstChar = resultscanned.charAt(0).toUpperCase();
-            const tableMap = {
-                'E': { columnName: 'NoST', tableH: 'ST_h' },
-                'R': { columnName: 'NoS4S', tableH: 'S4S_h' },
-                'S': { columnName: 'NoFJ', tableH: 'FJ_h' },
-                'T': { columnName: 'NoMoulding', tableH: 'Moulding_h' },
-                'U': { columnName: 'NoLaminating', tableH: 'Laminating_h' },
-                'V': { columnName: 'NoCCAkhir', tableH: 'CCAkhir_h' },
-                'W': { columnName: 'NoSanding', tableH: 'Sanding_h' },
-                'I': { columnName: 'NoBJ', tableH: 'BarangJadi_h' },
-            };
-
-            const tableInfo = tableMap[firstChar];
-
-            if (!tableInfo) {
-                return res.status(400).json({ message: `Invalid starting character for ${resultscanned}.` });
-            }
-
-            const { columnName, tableH } = tableInfo;
-
-            // Insert logic untuk menyimpan data
+        } else {
+            // Insert dan update data
             const updateQuery = `
                 UPDATE ${tableH}
                 SET IdLokasi = @idlokasi
-                WHERE ${columnName} = @${resultscannedParamName};
+                WHERE ${columnName} = @resultscanned;
             `;
+
+            const insertQuery = `
+                INSERT INTO ${tableName} (NoSO, ${columnName}, userID, IdLokasi, DateTimeScan)
+                VALUES (@noso, @resultscanned, @username, @idlokasi, GETDATE());
+            `;
+
             await request.query(updateQuery);
+            await request.query(insertQuery);
+
+
+            // Mengirim notifikasi via WebSocket
+            wss.clients.forEach(client => {
+                if (client.readyState === WebSocket.OPEN) {
+                    client.send(`Data ${noso} berhasil diinsert.`);
+                }
+            });
+
+
+
+            // if (!req.body.forceSave) {
+            //     // **Menambahkan pengecekan LastPrintDate dan DateCreate setelah insert dan update**
+            //     const getDateQuery = `
+            //     SELECT LastPrintDate, DateCreate
+            //     FROM ${tableH}
+            //     WHERE ${columnName} = @resultscanned;
+            //     `;
+            //     const dateResult = await request.query(getDateQuery);
+            //     const lastPrintDate = dateResult.recordset[0].LastPrintDate;
+            //     const dateCreate = dateResult.recordset[0].DateCreate;
+
+            //     // Pengecekan apakah LastPrintDate atau DateCreate sudah lebih dari 6 bulan
+            //     const sixMonthsAgo = new Date();
+            //     sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+
+            //     if (lastPrintDate === null || lastPrintDate === undefined) {
+            //         // Update LastPrintDate jika kosong atau null
+            //         const updateLastPrintDateQuery = `
+            //         UPDATE ${tableH}
+            //         SET LastPrintDate = DateCreate
+            //         WHERE ${columnName} = @resultscanned;
+            //         `;
+            //         await request.query(updateLastPrintDateQuery);
+            //         // Cek jika DateCreate sudah lebih dari 6 bulan
+            //         const dateCreateObj = new Date(dateCreate);
+            //         if (dateCreateObj <= sixMonthsAgo) {
+            //             return res.status(200).json({ message: 'DateCreate lebih dari 6 bulan' });
+            //         }
+            //     } else {
+            //         // Cek jika LastPrintDate sudah lebih dari 6 bulan
+            //         const lastPrintDateObj = new Date(lastPrintDate);
+            //         if (lastPrintDateObj <= sixMonthsAgo) {
+            //             return res.status(200).json({ message: 'LastPrintDate lebih dari 6 bulan' });
+            //         }
+            //     }
+            // }
+
+            console.log(`[${new Date().toISOString()}] 📦 Stock opname - ${username} input label : "${resultscanned}"`);
+
+            return res.status(201).json({ message: 'Data inserted successfully.' });
         }
 
-        return res.status(201).json({ message: 'Data berhasil disimpan.' });
 
     } catch (error) {
-        console.error('Error inserting data:', error);
-        res.status(500).json({ message: 'Failed to insert data.', error: error.message });
+        console.error('Error inserting/updating data:', error);
+        res.status(500).json({ message: 'Failed to insert/update data.', error: error.message });
     } finally {
         if (pool) {
             try {
@@ -421,9 +516,6 @@ router.post('/label-list/save-changes', verifyToken, async (req, res) => {
         }
     }
 });
-
-
-
 
 
 module.exports = router;
