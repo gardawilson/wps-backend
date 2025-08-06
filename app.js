@@ -12,6 +12,8 @@ const profileRoutes = require('./routes/profile-routes');  // Rute untuk Akun
 const mappingRoutes = require('./routes/mapping-routes');  // Rute untuk Data Label
 const nyangkutRoutes = require('./routes/nyangkut-routes');  // Rute untuk Data Label
 const mstLokasiRoutes = require('./routes/master-lokasi-routes');
+const bongkarKdRoutes = require('./routes/bongkar-kd-routes');
+
 
 
 
@@ -39,6 +41,8 @@ app.use('/api', profileRoutes);  // Rute stock opname
 app.use('/api', mappingRoutes);  // Rute stock opname
 app.use('/api', nyangkutRoutes);
 app.use('/api', mstLokasiRoutes);
+app.use('/api', bongkarKdRoutes);
+
 
 // WebSocket connection handling
 wss.on('connection', (ws) => {
