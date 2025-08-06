@@ -125,28 +125,55 @@ router.get('/kd-bongkar/:noProcKD/detail', verifyToken, async (req, res) => {
   
     try {
       const pool = await connectDb();
-      const request = new sql.Request(pool);
-      request.input('noST', sql.VarChar, noST);
-      request.input('noProcKD', sql.VarChar, noProcKD);
   
-      const result = await request.query(`
+      // Step 1: Cek DateUsage di ST_h
+      const checkDateUsageRequest = new sql.Request(pool);
+      checkDateUsageRequest.input('noST', sql.VarChar, noST);
+  
+      const dateUsageResult = await checkDateUsageRequest.query(`
+        SELECT DateUsage FROM ST_h WHERE NoST = @noST
+      `);
+  
+      const dateUsageRow = dateUsageResult.recordset[0];
+  
+      // Jika NoST tidak ditemukan di ST_h
+      if (!dateUsageRow) {
+        return res.status(404).json({
+          success: false,
+          message: 'NoST tidak ditemukan.'
+        });
+      }
+  
+      // Jika DateUsage sudah terisi
+      if (dateUsageRow.DateUsage !== null) {
+        return res.status(200).json({
+          success: false,
+          message: 'Label ini telah diproses.'
+        });
+      }
+  
+      // Step 2: Cek apakah NoST ada di KD_d
+      const checkKDRequest = new sql.Request(pool);
+      checkKDRequest.input('noST', sql.VarChar, noST);
+      checkKDRequest.input('noProcKD', sql.VarChar, noProcKD);
+  
+      const kdResult = await checkKDRequest.query(`
         SELECT 1 FROM KD_d WHERE NoST = @noST AND NoProcKD = @noProcKD
       `);
   
-      if (result.recordset.length > 0) {
-        // Sudah digunakan
+      if (kdResult.recordset.length > 0) {
         return res.status(200).json({
           success: true,
-          message: 'NoST valid'
+          message: 'NoST valid dan belum diproses.'
         });
       } else {
-        // Belum pernah dipakai, butuh konfirmasi
         return res.status(200).json({
           success: false,
           requireConfirmation: true,
           message: 'Label bukan bagian dari NoKD ini, yakin ingin lanjut perbaharui lokasi?'
         });
       }
+  
     } catch (err) {
       console.error(err);
       return res.status(500).json({
