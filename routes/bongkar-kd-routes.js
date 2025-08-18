@@ -15,9 +15,8 @@ router.get('/kd-bongkar', verifyToken, async (req, res) => {
       await connectDb();
   
       const result = await sql.query(`
-        SELECT [NoProcKD], [NoRuangKD], [TglMasuk], [TglKeluar]
+        SELECT TOP 20 [NoProcKD], [NoRuangKD], [TglMasuk], [TglKeluar]
         FROM [dbo].[KD_h]
-        WHERE TglKeluar IS NULL
         ORDER BY [TglMasuk] DESC
       `);
   
@@ -65,7 +64,7 @@ router.get('/kd-bongkar/:noProcKD/detail', verifyToken, async (req, res) => {
         WHERE KD.NoProcKD = @noProcKD
           AND (
             ST.IdLokasi LIKE '%J%' OR
-            ST.IdLokasi LIKE '%K%' OR
+            ST.IdLokasi LIKE '%KD%' OR
             ST.IdLokasi IS NULL
           )
               `);
@@ -111,6 +110,75 @@ router.get('/kd-bongkar/:noProcKD/detail', verifyToken, async (req, res) => {
     }
   });
 
+
+
+  //DATA LABEL YANG TELAH DI MAPPING
+  router.get('/kd-bongkar/:noProcKD/detail-checked', verifyToken, async (req, res) => {
+    const { noProcKD } = req.params;
+  
+    if (!noProcKD || noProcKD.trim() === '') {
+      return res.status(400).json({
+        success: false,
+        message: 'Parameter noProcKD harus diisi.'
+      });
+    }
+  
+    try {
+      await connectDb();
+  
+      const request = new sql.Request();
+      request.input('noProcKD', sql.VarChar, noProcKD);
+  
+      // Ambil data label (sudah dicek)
+      const dataResult = await request.query(`
+        SELECT KD.[NoProcKD], KD.[NoST], ST.[DateCreate], ST.[IdLokasi]
+        FROM KD_d KD
+        LEFT JOIN ST_h ST ON KD.NoST = ST.NoST
+        WHERE KD.NoProcKD = @noProcKD
+          AND ST.IdLokasi NOT LIKE '%J%'
+          AND ST.IdLokasi NOT LIKE '%K%'
+          AND ST.IdLokasi IS NOT NULL
+      `);
+  
+      // Ambil total label
+      const totalResult = await request.query(`
+        SELECT COUNT(*) AS totalLabel
+        FROM KD_d KD
+        LEFT JOIN ST_h ST ON KD.NoST = ST.NoST
+        WHERE KD.NoProcKD = @noProcKD
+          AND ST.IdLokasi NOT LIKE '%J%'
+          AND ST.IdLokasi NOT LIKE '%K%'
+          AND ST.IdLokasi IS NOT NULL
+      `);
+  
+      const labels = dataResult.recordset;
+      const totalLabel = totalResult.recordset[0]?.totalLabel || 0;
+  
+      if (labels.length === 0) {
+        return res.status(404).json({ message: 'Data detail KD (sudah dicek) tidak ditemukan.' });
+      }
+  
+      // Format DateCreate
+      const formattedLabels = labels.map(label => ({
+        ...label,
+        DateCreate: label.DateCreate ? formatDate(label.DateCreate) : null
+      }));
+  
+      res.json({
+        success: true,
+        message: 'Data detail KD (sudah dicek) berhasil diambil.',
+        data: {
+          labels: formattedLabels,
+          totalLabel
+        }
+      });
+  
+    } catch (error) {
+      console.error('Error fetching KD detail (checked):', error);
+      res.status(500).json({ message: 'Internal Server Error', error: error.message });
+    }
+  });
+  
 
 
   router.post('/kd-bongkar/check', verifyToken, async (req, res) => {
