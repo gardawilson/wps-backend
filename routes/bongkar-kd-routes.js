@@ -11,36 +11,49 @@ const formatDate = (date) => {
 
 // Route untuk mendapatkan daftar Bongkar KD
 router.get('/kd-bongkar', verifyToken, async (req, res) => {
-    try {
-      await connectDb();
-  
-      const result = await sql.query(`
-        SELECT TOP 20 [NoProcKD], [NoRuangKD], [TglMasuk], [TglKeluar]
-        FROM [dbo].[KD_h]
-        ORDER BY [TglMasuk] DESC
-      `);
-  
-      if (!result.recordset || result.recordset.length === 0) {
-        return res.status(404).json({ message: 'Tidak ada data Bongkar KD.' });
-      }
-  
-      const formattedData = result.recordset.map(item => ({
-        NoProcKD: item.NoProcKD,
-        NoRuangKD: item.NoRuangKD,
-        TglMasuk: formatDate(item.TglMasuk),
-        TglKeluar: item.TglKeluar ? formatDate(item.TglKeluar) : null
-      }));
-  
-      res.json(formattedData);
-    } catch (error) {
-      console.error('Error:', error.message);
-      res.status(500).json({ message: 'Internal Server Error' });
+  try {
+    await connectDb();
+
+    // baca query param, default = false
+    const isPending = req.query.isPending === 'true';  
+
+    let whereClause = '';
+    if (isPending) {
+      whereClause = 'WHERE [TglKeluar] IS NULL'; // belum keluar
+    } else {
+      whereClause = 'WHERE [TglKeluar] IS NOT NULL'; // sudah keluar
     }
-  });
+
+    const result = await sql.query(`
+      SELECT TOP 20 [NoProcKD], [NoRuangKD], [TglMasuk], [TglKeluar]
+      FROM [dbo].[KD_h]
+      ${whereClause}
+      ORDER BY [TglMasuk] DESC
+    `);
+
+    if (!result.recordset || result.recordset.length === 0) {
+      return res.status(404).json({ message: 'Tidak ada data Bongkar KD.' });
+    }
+
+    const formattedData = result.recordset.map(item => ({
+      NoProcKD: item.NoProcKD,
+      NoRuangKD: item.NoRuangKD,
+      TglMasuk: formatDate(item.TglMasuk),
+      TglKeluar: item.TglKeluar ? formatDate(item.TglKeluar) : null,
+      isPending: item.TglKeluar ? false : true
+    }));
+
+    res.json(formattedData);
+  } catch (error) {
+    console.error('Error:', error.message);
+    res.status(500).json({ message: 'Internal Server Error' });
+  }
+});
+
 
 
   // GET /kd-bongkar/:noProcKD/detail
-router.get('/kd-bongkar/:noProcKD/detail', verifyToken, async (req, res) => {
+  router.get('/kd-bongkar/:noProcKD/detail', verifyToken, async (req, res) => {
     const { noProcKD } = req.params;
   
     if (!noProcKD || noProcKD.trim() === '') {
@@ -50,15 +63,16 @@ router.get('/kd-bongkar/:noProcKD/detail', verifyToken, async (req, res) => {
       });
     }
   
+    let pool;
     try {
-      await connectDb();
+      pool = await connectDb();
   
-      const request = new sql.Request();
+      const request = new sql.Request(pool);
       request.input('noProcKD', sql.VarChar, noProcKD);
   
-      // Ambil data label
-      const dataResult = await request.query(`
-        SELECT KD.[NoProcKD], KD.[NoST], ST.[DateCreate]
+      // Ambil data label header (ST_h)
+      const labelHeaderQuery = `
+        SELECT KD.[NoProcKD], KD.[NoST], ST.[DateCreate], ST.[IdUOMTblLebar], ST.[IdUOMPanjang], ST.[IdLokasi]
         FROM KD_d KD
         LEFT JOIN ST_h ST ON KD.NoST = ST.NoST
         WHERE KD.NoProcKD = @noProcKD
@@ -67,49 +81,179 @@ router.get('/kd-bongkar/:noProcKD/detail', verifyToken, async (req, res) => {
             ST.IdLokasi LIKE '%KD%' OR
             ST.IdLokasi IS NULL
           )
-              `);
+          AND EXISTS (
+            SELECT 1 FROM ST_d STD 
+            WHERE STD.NoST = ST.NoST
+          )
+      `;
           
-              // Ambil total label
-              const totalResult = await request.query(`
+      // Ambil total label
+      const totalQuery = `
         SELECT COUNT(*) AS totalLabel
         FROM KD_d KD
         LEFT JOIN ST_h ST ON KD.NoST = ST.NoST
         WHERE KD.NoProcKD = @noProcKD
           AND (
             ST.IdLokasi LIKE '%J%' OR
-            ST.IdLokasi LIKE '%K%' OR
+            ST.IdLokasi LIKE '%KD%' OR
             ST.IdLokasi IS NULL
           )
-              `);
-  
-      const labels = dataResult.recordset;
+          AND EXISTS (
+            SELECT 1 FROM ST_d STD 
+            WHERE STD.NoST = ST.NoST
+          )
+      `;
+
+      const [labelHeaderResult, totalResult] = await Promise.all([
+        request.query(labelHeaderQuery),
+        request.query(totalQuery)
+      ]);
+
+      const labelHeaders = labelHeaderResult.recordset;
       const totalLabel = totalResult.recordset[0]?.totalLabel || 0;
-  
-      if (labels.length === 0) {
-        return res.status(404).json({ message: 'Data detail KD tidak ditemukan.' });
+
+      if (labelHeaders.length === 0) {
+        return res.status(404).json({ 
+          success: false,
+          message: 'Data detail KD tidak ditemukan.',
+          data: {
+            labels: [],
+            totalLabel: 0,
+            summary: {
+              totalM3: "0.0000",
+              totalJumlah: 0
+            }
+          }
+        });
       }
 
-      // Format DateCreate
-      const formattedLabels = labels.map(label => ({
-        ...label,
-        DateCreate: label.DateCreate ? formatDate(label.DateCreate) : null
-      }));
+      // Ambil semua NoST untuk query detail
+      const noSTList = labelHeaders.map(l => `'${l.NoST}'`).join(",");
+      
+      // Query untuk mengambil data detail dari ST_d
+      const detailQuery = `
+        SELECT ST.NoST, ST.DateCreate, ST.IdUOMTblLebar, ST.IdUOMPanjang, ST.IdLokasi,
+               STD.NoUrut, STD.Tebal, STD.Lebar, STD.Panjang, STD.JmlhBatang
+        FROM ST_h ST
+        LEFT JOIN ST_d STD ON ST.NoST = STD.NoST
+        WHERE ST.NoST IN (${noSTList})
+        AND STD.NoUrut IS NOT NULL
+        ORDER BY ST.NoST, STD.NoUrut
+      `;
+
+      const detailResult = await request.query(detailQuery);
+
+      // Group data berdasarkan NoST
+      const groupedData = {};
+      const labelOrder = [];
+
+      // Initialize summary variables
+      let summaryTotalM3 = 0;
+      let summaryTotalJumlah = 0;
+
+      // Initialize grouped data structure
+      labelHeaders.forEach(h => {
+        groupedData[h.NoST] = {
+          NoProcKD: h.NoProcKD,
+          NoST: h.NoST,
+          DateCreate: formatDate(h.DateCreate),
+          IdUOMTblLebar: h.IdUOMTblLebar,
+          IdUOMPanjang: h.IdUOMPanjang,
+          IdLokasi: h.IdLokasi,
+          Details: []
+        };
+        labelOrder.push(h.NoST);
+      });
+
+      // Populate detail data
+      detailResult.recordset.forEach(row => {
+        if (groupedData[row.NoST]) {
+          groupedData[row.NoST].Details.push({
+            NoUrut: row.NoUrut,
+            Tebal: row.Tebal,
+            Lebar: row.Lebar,
+            Panjang: row.Panjang,
+            JmlhBatang: row.JmlhBatang
+          });
+        }
+      });
+
+      // Process each label and calculate totals
+      const processedLabels = labelOrder.map(noST => {
+        const label = groupedData[noST];
+        label.Details.sort((a, b) => a.NoUrut - b.NoUrut);
+        
+        // Calculate M3 for each label (using ST calculation logic)
+        let labelM3 = 0;
+        let labelJumlah = 0;
+        
+        const formattedDetailData = label.Details.map(item => {
+          const tebal = item.Tebal;
+          const lebar = item.Lebar;
+          const panjang = item.Panjang;
+          const pcs = item.JmlhBatang;
+          const idUOMTblLebar = label.IdUOMTblLebar;
+          
+          let rowM3 = 0;
+          
+          // ST (Sawn Timber) calculation
+          if (idUOMTblLebar === 1) { // Jika menggunakan milimeter
+            rowM3 = ((tebal * lebar * panjang * pcs * 304.8 / 1000000000 / 1.416 * 10000) / 10000) * 1.416;
+          } else { // Satuan lainnya
+            rowM3 = ((tebal * lebar * panjang * pcs / 7200.8 * 10000) / 10000) * 1.416;
+          }
+          
+          // Membulatkan ke 4 desimal
+          rowM3 = Math.floor(rowM3 * 10000) / 10000;
+          
+          labelM3 += rowM3;
+          labelJumlah += pcs;
+          
+          return {
+            NoUrut: item.NoUrut,
+            Tebal: item.Tebal,
+            Lebar: item.Lebar,
+            Panjang: item.Panjang,
+            JmlhBatang: item.JmlhBatang
+          };
+        });
+        
+        // Add to summary totals
+        summaryTotalM3 += labelM3;
+        summaryTotalJumlah += labelJumlah;
+        
+        return {
+          ...label,
+          Details: formattedDetailData,
+          LabelM3: labelM3.toFixed(4),
+          LabelJumlah: labelJumlah
+        };
+      });
   
       res.json({
         success: true,
         message: 'Data detail KD berhasil diambil.',
         data: {
-          labels: formattedLabels,
-          totalLabel
+          labels: processedLabels,
+          totalLabel,
+          summary: {
+            totalM3: summaryTotalM3.toFixed(4),
+            totalJumlah: summaryTotalJumlah
+          }
         }
       });
       
     } catch (error) {
       console.error('Error fetching KD detail:', error);
-      res.status(500).json({ message: 'Internal Server Error', error: error.message });
+      res.status(500).json({ 
+        success: false,
+        message: 'Internal Server Error', 
+        error: error.message 
+      });
+    } finally {
+      if (pool) await pool.close();
     }
-  });
-
+});
 
 
   //DATA LABEL YANG TELAH DI MAPPING
@@ -123,61 +267,193 @@ router.get('/kd-bongkar/:noProcKD/detail', verifyToken, async (req, res) => {
       });
     }
   
+    let pool;
     try {
-      await connectDb();
+      pool = await connectDb();
   
-      const request = new sql.Request();
+      const request = new sql.Request(pool);
       request.input('noProcKD', sql.VarChar, noProcKD);
   
-      // Ambil data label (sudah dicek)
-      const dataResult = await request.query(`
-        SELECT KD.[NoProcKD], KD.[NoST], ST.[DateCreate], ST.[IdLokasi]
+      // Ambil data label header (sudah dicek) - ST_h
+      const labelHeaderQuery = `
+        SELECT KD.[NoProcKD], KD.[NoST], ST.[DateCreate], ST.[IdUOMTblLebar], ST.[IdUOMPanjang], ST.[IdLokasi]
         FROM KD_d KD
         LEFT JOIN ST_h ST ON KD.NoST = ST.NoST
         WHERE KD.NoProcKD = @noProcKD
           AND ST.IdLokasi NOT LIKE '%J%'
-          AND ST.IdLokasi NOT LIKE '%K%'
+          AND ST.IdLokasi NOT LIKE '%KD%'
           AND ST.IdLokasi IS NOT NULL
-      `);
+          AND EXISTS (
+            SELECT 1 FROM ST_d STD 
+            WHERE STD.NoST = ST.NoST
+          )
+      `;
   
-      // Ambil total label
-      const totalResult = await request.query(`
+      // Ambil total label (sudah dicek)
+      const totalQuery = `
         SELECT COUNT(*) AS totalLabel
         FROM KD_d KD
         LEFT JOIN ST_h ST ON KD.NoST = ST.NoST
         WHERE KD.NoProcKD = @noProcKD
           AND ST.IdLokasi NOT LIKE '%J%'
-          AND ST.IdLokasi NOT LIKE '%K%'
+          AND ST.IdLokasi NOT LIKE '%KD%'
           AND ST.IdLokasi IS NOT NULL
-      `);
-  
-      const labels = dataResult.recordset;
+          AND EXISTS (
+            SELECT 1 FROM ST_d STD 
+            WHERE STD.NoST = ST.NoST
+          )
+      `;
+
+      const [labelHeaderResult, totalResult] = await Promise.all([
+        request.query(labelHeaderQuery),
+        request.query(totalQuery)
+      ]);
+
+      const labelHeaders = labelHeaderResult.recordset;
       const totalLabel = totalResult.recordset[0]?.totalLabel || 0;
-  
-      if (labels.length === 0) {
-        return res.status(404).json({ message: 'Data detail KD (sudah dicek) tidak ditemukan.' });
+
+      if (labelHeaders.length === 0) {
+        return res.status(404).json({ 
+          success: false,
+          message: 'Data detail KD (sudah dicek) tidak ditemukan.',
+          data: {
+            labels: [],
+            totalLabel: 0,
+            summary: {
+              totalM3: "0.0000",
+              totalJumlah: 0
+            }
+          }
+        });
       }
-  
-      // Format DateCreate
-      const formattedLabels = labels.map(label => ({
-        ...label,
-        DateCreate: label.DateCreate ? formatDate(label.DateCreate) : null
-      }));
+
+      // Ambil semua NoST untuk query detail
+      const noSTList = labelHeaders.map(l => `'${l.NoST}'`).join(",");
+      
+      // Query untuk mengambil data detail dari ST_d
+      const detailQuery = `
+        SELECT ST.NoST, ST.DateCreate, ST.IdUOMTblLebar, ST.IdUOMPanjang, ST.IdLokasi,
+               STD.NoUrut, STD.Tebal, STD.Lebar, STD.Panjang, STD.JmlhBatang
+        FROM ST_h ST
+        LEFT JOIN ST_d STD ON ST.NoST = STD.NoST
+        WHERE ST.NoST IN (${noSTList})
+        AND STD.NoUrut IS NOT NULL
+        ORDER BY ST.NoST, STD.NoUrut
+      `;
+
+      const detailResult = await request.query(detailQuery);
+
+      // Group data berdasarkan NoST
+      const groupedData = {};
+      const labelOrder = [];
+
+      // Initialize summary variables
+      let summaryTotalM3 = 0;
+      let summaryTotalJumlah = 0;
+
+      // Initialize grouped data structure
+      labelHeaders.forEach(h => {
+        groupedData[h.NoST] = {
+          NoProcKD: h.NoProcKD,
+          NoST: h.NoST,
+          DateCreate: formatDate(h.DateCreate),
+          IdUOMTblLebar: h.IdUOMTblLebar,
+          IdUOMPanjang: h.IdUOMPanjang,
+          IdLokasi: h.IdLokasi,
+          Details: []
+        };
+        labelOrder.push(h.NoST);
+      });
+
+      // Populate detail data
+      detailResult.recordset.forEach(row => {
+        if (groupedData[row.NoST]) {
+          groupedData[row.NoST].Details.push({
+            NoUrut: row.NoUrut,
+            Tebal: row.Tebal,
+            Lebar: row.Lebar,
+            Panjang: row.Panjang,
+            JmlhBatang: row.JmlhBatang
+          });
+        }
+      });
+
+      // Process each label and calculate totals
+      const processedLabels = labelOrder.map(noST => {
+        const label = groupedData[noST];
+        label.Details.sort((a, b) => a.NoUrut - b.NoUrut);
+        
+        // Calculate M3 for each label (using ST calculation logic)
+        let labelM3 = 0;
+        let labelJumlah = 0;
+        
+        const formattedDetailData = label.Details.map(item => {
+          const tebal = item.Tebal;
+          const lebar = item.Lebar;
+          const panjang = item.Panjang;
+          const pcs = item.JmlhBatang;
+          const idUOMTblLebar = label.IdUOMTblLebar;
+          
+          let rowM3 = 0;
+          
+          // ST (Sawn Timber) calculation
+          if (idUOMTblLebar === 1) { // Jika menggunakan milimeter
+            rowM3 = ((tebal * lebar * panjang * pcs * 304.8 / 1000000000 / 1.416 * 10000) / 10000) * 1.416;
+          } else { // Satuan lainnya
+            rowM3 = ((tebal * lebar * panjang * pcs / 7200.8 * 10000) / 10000) * 1.416;
+          }
+          
+          // Membulatkan ke 4 desimal
+          rowM3 = Math.floor(rowM3 * 10000) / 10000;
+          
+          labelM3 += rowM3;
+          labelJumlah += pcs;
+          
+          return {
+            NoUrut: item.NoUrut,
+            Tebal: item.Tebal,
+            Lebar: item.Lebar,
+            Panjang: item.Panjang,
+            JmlhBatang: item.JmlhBatang
+          };
+        });
+        
+        // Add to summary totals
+        summaryTotalM3 += labelM3;
+        summaryTotalJumlah += labelJumlah;
+        
+        return {
+          ...label,
+          Details: formattedDetailData,
+          LabelM3: labelM3.toFixed(4),
+          LabelJumlah: labelJumlah
+        };
+      });
   
       res.json({
         success: true,
         message: 'Data detail KD (sudah dicek) berhasil diambil.',
         data: {
-          labels: formattedLabels,
-          totalLabel
+          labels: processedLabels,
+          totalLabel,
+          summary: {
+            totalM3: summaryTotalM3.toFixed(4),
+            totalJumlah: summaryTotalJumlah
+          }
         }
       });
   
     } catch (error) {
       console.error('Error fetching KD detail (checked):', error);
-      res.status(500).json({ message: 'Internal Server Error', error: error.message });
+      res.status(500).json({ 
+        success: false,
+        message: 'Internal Server Error', 
+        error: error.message 
+      });
+    } finally {
+      if (pool) await pool.close();
     }
-  });
+});
   
 
 
