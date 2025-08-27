@@ -78,6 +78,7 @@ router.get('/kd-bongkar', verifyToken, async (req, res) => {
         WHERE KD.NoProcKD = @noProcKD
           AND (
             ST.IdLokasi LIKE '%J%' OR
+            ST.IdLokasi LIKE '%L%' OR
             ST.IdLokasi LIKE '%KD%' OR
             ST.IdLokasi IS NULL
           )
@@ -95,6 +96,7 @@ router.get('/kd-bongkar', verifyToken, async (req, res) => {
         WHERE KD.NoProcKD = @noProcKD
           AND (
             ST.IdLokasi LIKE '%J%' OR
+            ST.IdLokasi LIKE '%L%' OR
             ST.IdLokasi LIKE '%KD%' OR
             ST.IdLokasi IS NULL
           )
@@ -281,6 +283,7 @@ router.get('/kd-bongkar', verifyToken, async (req, res) => {
         LEFT JOIN ST_h ST ON KD.NoST = ST.NoST
         WHERE KD.NoProcKD = @noProcKD
           AND ST.IdLokasi NOT LIKE '%J%'
+          AND ST.IdLokasi NOT LIKE '%L%'
           AND ST.IdLokasi NOT LIKE '%KD%'
           AND ST.IdLokasi IS NOT NULL
           AND EXISTS (
@@ -296,6 +299,7 @@ router.get('/kd-bongkar', verifyToken, async (req, res) => {
         LEFT JOIN ST_h ST ON KD.NoST = ST.NoST
         WHERE KD.NoProcKD = @noProcKD
           AND ST.IdLokasi NOT LIKE '%J%'
+          AND ST.IdLokasi NOT LIKE '%L%'
           AND ST.IdLokasi NOT LIKE '%KD%'
           AND ST.IdLokasi IS NOT NULL
           AND EXISTS (
