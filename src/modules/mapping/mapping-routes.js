@@ -1,7 +1,7 @@
 const express = require('express');
-const verifyToken = require('../middleware/verifyToken');  // Mengimpor middleware
+const verifyToken = require('../../core/middleware/verify-token');
 const moment = require('moment');
-const { sql, connectDb } = require('../db');
+const { sql, connectDb } = require('../../core/config/db');
 const router = express.Router();
 
 const formatDate = (date) => {

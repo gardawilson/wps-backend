@@ -5,7 +5,7 @@ const crypto = require('crypto');  // Import crypto untuk hashing
 const jwt = require('jsonwebtoken');  // Import jsonwebtoken untuk JWT
 const router = express.Router();
 
-const { sql, connectDb } = require('../db');  // Import koneksi DB
+const { sql, connectDb } = require('../../core/config/db');  // Import koneksi DB
 
 // Fungsi untuk mengenkripsi password (TripleDES)
 function hashPassword(password) {
