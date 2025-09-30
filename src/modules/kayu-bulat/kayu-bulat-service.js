@@ -242,7 +242,7 @@ exports.getAttachments = async (noKayuBulat) => {
 
 
 
-// Update image data tanpa file
+// Update image data tanpa FILE
 exports.updateImageData = async ({ noKayuBulat, tier, pcs, note }) => {
   const pool = await connectDb();
   await pool.request()
