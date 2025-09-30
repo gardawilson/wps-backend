@@ -20,10 +20,11 @@ function hashPassword(password) {
     return encrypted;
   } catch (err) {
     console.error('Error in hashing password:', err);
-    return null;
+    return null; 
   }
 }
 
+// Middleware untuk parsing JSON
 // Middleware untuk parsing JSON
 router.use(express.json());
 
