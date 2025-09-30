@@ -105,7 +105,7 @@ exports.uploadVideo = async (req, res) => {
     const videoPath = req.file.path;
 
     // 🔹 Generate thumbnail
-    const thumbDir = path.join(__dirname, '../../../uploads/kayu-bulat/videos/thumbs');
+    const thumbDir = path.join(__dirname, '../../../storage/kayu-bulat/videos/thumbs');
     const thumbName = await generateThumbnail(videoPath, thumbDir);
 
     // 🔹 Save ke DB
@@ -152,7 +152,7 @@ exports.getAttachments = async (req, res) => {
 exports.streamVideo = (req, res) => {
   try {
     const fileName = req.params.fileName;
-    const filePath = path.join(__dirname, "../../uploads/kayu-bulat/videos", fileName);
+    const filePath = path.join(__dirname, "../../storage/kayu-bulat/videos", fileName);
 
     fs.stat(filePath, (err, stats) => {
       if (err) {

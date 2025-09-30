@@ -136,7 +136,7 @@ exports.saveImage = async ({ noKayuBulat, tier, imageName, pcs }) => {
 
   // 3. Hapus file lama (kalau ada dan beda nama)
   if (oldFileName && oldFileName !== imageName) {
-    const filePath = path.join(__dirname, "../../../uploads/kayu-bulat/images", oldFileName);
+    const filePath = path.join(__dirname, "../../../storage/kayu-bulat/images", oldFileName);
     if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
   }
 };
@@ -180,12 +180,12 @@ exports.saveVideo = async ({ noKayuBulat, noUrut, videoName, remark, videoThumbn
 
   // 3. Hapus file lama (kalau ada dan beda nama)
   if (oldVideo && oldVideo !== videoName) {
-    const videoPath = path.join(__dirname, "../../../uploads/kayu-bulat/videos", oldVideo);
+    const videoPath = path.join(__dirname, "../../../storage/kayu-bulat/videos", oldVideo);
     if (fs.existsSync(videoPath)) fs.unlinkSync(videoPath);
   }
 
   if (oldThumb && oldThumb !== videoThumbnail) {
-    const thumbPath = path.join(__dirname, "../../../uploads/kayu-bulat/videos/thumbs", oldThumb);
+    const thumbPath = path.join(__dirname, "../../../storage/kayu-bulat/videos/thumbs", oldThumb);
     if (fs.existsSync(thumbPath)) fs.unlinkSync(thumbPath);
   }
 };
@@ -226,15 +226,15 @@ exports.getAttachments = async (noKayuBulat) => {
       tier: row.Tier,
       pcs: row.Pcs,
       imageName: row.ImageName,
-      imageUrl: `${baseUrl}/uploads/kayu-bulat/images/${row.ImageName}`,
+      imageUrl: `${baseUrl}/storage/kayu-bulat/images/${row.ImageName}`,
     })),
     videos: resultVideos.recordset.map(row => ({
       noUrut: row.NoUrut,
       videoName: row.VideoName,
       remark: row.Remark,
-      videoUrl: `${baseUrl}/uploads/kayu-bulat/videos/${row.VideoName}`,
+      videoUrl: `${baseUrl}/storage/kayu-bulat/videos/${row.VideoName}`,
       thumbnailUrl: row.VideoThumbnailName
-        ? `${baseUrl}/uploads/kayu-bulat/videos/thumbs/${row.VideoThumbnailName}`
+        ? `${baseUrl}/storage/kayu-bulat/videos/thumbs/${row.VideoThumbnailName}`
         : null,
     }))
   };
@@ -287,7 +287,7 @@ exports.deleteImage = async ({ noKayuBulat, tier }) => {
     .query(`DELETE FROM KayuBulat_dTier WHERE NoKayuBulat=@NoKayuBulat AND Tier=@Tier`);
 
   if (fileName) {
-    const filePath = path.join(__dirname, "../../../uploads/kayu-bulat/images", fileName);
+    const filePath = path.join(__dirname, "../../../storage/kayu-bulat/images", fileName);
     if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
   }
 
@@ -323,13 +323,13 @@ exports.deleteVideo = async ({ noKayuBulat, noUrut }) => {
 
   // 3. Hapus file fisik video
   if (fileName) {
-    const filePath = path.join(__dirname, "../../../uploads/kayu-bulat/videos", fileName);
+    const filePath = path.join(__dirname, "../../../storage/kayu-bulat/videos", fileName);
     if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
   }
 
   // 4. Hapus file thumbnail
   if (thumbName) {
-    const thumbPath = path.join(__dirname, "../../../uploads/kayu-bulat/videos/thumbs", thumbName);
+    const thumbPath = path.join(__dirname, "../../../storage/kayu-bulat/videos/thumbs", thumbName);
     if (fs.existsSync(thumbPath)) fs.unlinkSync(thumbPath);
   }
 

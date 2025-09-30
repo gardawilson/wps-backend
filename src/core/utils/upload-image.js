@@ -4,7 +4,7 @@ const fs = require('fs');
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    const dir = path.join(__dirname, '../../../uploads/kayu-bulat/images');
+    const dir = path.join(__dirname, '../../../storage/kayu-bulat/images');
     fs.mkdirSync(dir, { recursive: true }); // auto bikin folder kalau belum ada
     cb(null, dir);
   },

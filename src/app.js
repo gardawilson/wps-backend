@@ -23,12 +23,12 @@ app.use(bodyParser.json());
 
 // Static folder
 app.use(
-  '/uploads/kayu-bulat',
-  express.static(path.join(__dirname, '../uploads/kayu-bulat'))
+  '/storage/kayu-bulat',
+  express.static(path.join(__dirname, '../storage/kayu-bulat'))
 );
 
 // API routes
-app.use('/api', authRoutes);
+app.use('/api/auth', authRoutes);
 app.use('/api', stockOpnameRoutes);
 app.use('/api', labelDataRoutes);
 app.use('/api', profileRoutes);
