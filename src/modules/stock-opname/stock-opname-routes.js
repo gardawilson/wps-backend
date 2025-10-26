@@ -1,7 +1,7 @@
 const express = require('express');
 const verifyToken = require('../../core/middleware/verify-token');
 const moment = require('moment');
-const { sql, connectDb } = require('../../core/config/db');
+const { sql, poolPromise } = require('../../core/config/db');
 const router = express.Router();
 
 const formatDate = (date) => {
@@ -22,9 +22,15 @@ wss.on('connection', (ws) => {
 // Route untuk mendapatkan Nomor Stock Opname
 router.get('/no-stock-opname', verifyToken, async (req, res) => {
     try {
-        await connectDb();
+        const pool = await poolPromise;  // ← await poolPromise
+        const request = pool.request();   // ← buat request dari pool
 
-        const result = await sql.query('SELECT [NoSO], [Tgl] FROM [dbo].[StockOpname_h] WHERE [Tgl] > (SELECT MAX(PeriodHarian) FROM [dbo].[MstTutupTransaksiHarian]) ORDER BY [NoSO] DESC');
+        const result = await request.query(`
+            SELECT [NoSO], [Tgl] 
+            FROM [dbo].[StockOpname_h] 
+            WHERE [Tgl] > (SELECT MAX(PeriodHarian) FROM [dbo].[MstTutupTransaksiHarian]) 
+            ORDER BY [NoSO] DESC
+        `);
 
         if (!result.recordset || result.recordset.length === 0) {
             return res.status(404).json({ message: 'Tidak ada Jadwal Stock Opname saat ini' });
@@ -52,7 +58,7 @@ router.get('/no-stock-opname/:noso', verifyToken, async (req, res) => {
     const filterBy = req.query.filterBy || null;
     const idlokasi = req.query.idlokasi || null;
     const offset = (page - 1) * pageSize;
-    const { username } = req;  // Mengambil username dari request object
+    const { username } = req;
 
     console.log(`[${new Date().toISOString()}] Stock opname - ${username} mengakses : "${filterBy}"`);
 
@@ -60,12 +66,12 @@ router.get('/no-stock-opname/:noso', verifyToken, async (req, res) => {
         return res.status(400).json({ message: 'Page and pageSize must be positive numbers.' });
     }
 
-    let pool;
     try {
-        pool = await connectDb();
-        const request = new sql.Request(pool);
+        const pool = await poolPromise;  // ← await poolPromise
+        const request = pool.request();   // ← pool.request()
+        
         request.input('noso', sql.VarChar, noso);
-        request.input('username', sql.VarChar, username);  // Menambahkan username ke query
+        request.input('username', sql.VarChar, username);
 
         if (idlokasi) request.input('idlokasi', sql.VarChar, idlokasi);
 
@@ -86,7 +92,6 @@ router.get('/no-stock-opname/:noso', verifyToken, async (req, res) => {
                 WHERE d.NoSO = @noso
                 ${idlokasi && idlokasi !== 'all' ? "AND d.IdLokasi = @idlokasi" : ""}
                 AND d.UserID = @username
-
             `;
         }
 
@@ -96,7 +101,6 @@ router.get('/no-stock-opname/:noso', verifyToken, async (req, res) => {
                 WHERE d.NoSO = @noso
                 ${idlokasi && idlokasi !== 'all' ? "AND d.IdLokasi = @idlokasi" : ""}
                 AND d.UserID = @username
-
             `;
         }
 
@@ -185,32 +189,25 @@ router.get('/no-stock-opname/:noso', verifyToken, async (req, res) => {
 
     } catch (error) {
         res.status(500).json({ message: 'Internal Server Error', error: error.message });
-    } finally {
-        if (pool) await pool.close();
     }
 });
 
-
 // Fungsi untuk pengecekan lanjutan di tabel lain berdasarkan tipe resultscanned
 const checkInOtherTables = async (request, resultscanned) => {
-    // Menentukan tipe tabel berdasarkan tipe resultscanned
     let tablesToCheck = [];
     let columnToSearch = '';
 
-    // Menentukan tabel dan kolom yang relevan berdasarkan kode pertama pada resultscanned
     const firstChar = resultscanned.charAt(0).toUpperCase();
 
     if (firstChar === 'E') {
-        // Jika 'E', gunakan tabel-tabel untuk S4SProduksiInputST, AdjustmentInputST, BongkarSusunInputST
         tablesToCheck = [
             { tableName: "S4SProduksiInputST", column: "NoProduksi" },
             { tableName: "AdjustmentInputST", column: "NoAdjustment" },
             { tableName: "BongkarSusunInputST", column: "NoBongkarSusun" }
         ];
-        columnToSearch = 'NoST'; // Menetapkan kolom pencarian untuk 'E'
+        columnToSearch = 'NoST';
 
     } else if (firstChar === 'R') {
-        // Jika 'R', gunakan tabel-tabel untuk S4SProduksiInputS4S, FJProduksiInputS4S, dll.
         tablesToCheck = [
             { tableName: "S4SProduksiInputS4S", column: "NoProduksi" },
             { tableName: "FJProduksiInputS4S", column: "NoProduksi" },
@@ -218,7 +215,7 @@ const checkInOtherTables = async (request, resultscanned) => {
             { tableName: "AdjustmentInputS4S", column: "NoAdjustment" },
             { tableName: "BongkarSusunInputS4S", column: "NoBongkarSusun" }
         ];
-        columnToSearch = 'NoS4S'; // Menetapkan kolom pencarian untuk 'R'
+        columnToSearch = 'NoS4S';
 
     } else if (firstChar === 'S') {
         tablesToCheck = [
@@ -285,11 +282,9 @@ const checkInOtherTables = async (request, resultscanned) => {
         columnToSearch = 'NoBJ';
 
     } else {
-        // Jika resultscanned bukan 'E' atau 'R', bisa menambahkan logika lain atau handling error
         return { message: 'Invalid resultscanned type', status: 400 };
     }
 
-    // Pengecekan tabel sesuai dengan daftar yang sudah ditentukan
     for (let table of tablesToCheck) {
         const checkQuery = `
             SELECT ${table.column}
@@ -300,16 +295,16 @@ const checkInOtherTables = async (request, resultscanned) => {
         const resultCheck = await request.query(checkQuery);
 
         if (resultCheck.recordset.length > 0) {
-            const value = resultCheck.recordset[0][table.column]; // Ambil nilai kolom yang sesuai
+            const value = resultCheck.recordset[0][table.column];
             return {
                 message: `Label sudah di Proses pada Nomor ${value}. Yakin ingin menyimpan?`,
                 status: 409,
-                value: value // Kembalikan nilai kolom yang ditemukan
+                value: value
             };
         }
     }
 
-    return null; // Tidak ada masalah
+    return null;
 };
 
 
@@ -318,20 +313,20 @@ const checkInOtherTables = async (request, resultscanned) => {
 router.post('/no-stock-opname/:noso/scan', verifyToken, async (req, res) => {
     const { noso } = req.params;
     const { resultscanned, idlokasi } = req.body;
-    const { username } = req;  // Mengambil username dari request object
+    const { username } = req;
 
     if (!noso || !resultscanned || !idlokasi) {
         return res.status(400).json({ message: 'NoSO, resultscanned, and idlokasi are required.' });
     }
 
-    let pool;
     try {
-        pool = await connectDb();
-        const request = new sql.Request(pool);
+        const pool = await poolPromise;  // ← await poolPromise (PERBAIKAN UTAMA)
+        const request = pool.request();   // ← pool.request() (PERBAIKAN UTAMA)
+        
         request.input('noso', sql.VarChar, noso);
         request.input('resultscanned', sql.VarChar, resultscanned);
         request.input('idlokasi', sql.VarChar, idlokasi);
-        request.input('username', sql.VarChar, username);  // Menambahkan username ke query
+        request.input('username', sql.VarChar, username);
 
         // Validasi pola resultscanned
         const validPattern = /^[ERSTUVWIA]\.\d{6}$/;
@@ -350,7 +345,6 @@ router.post('/no-stock-opname/:noso/scan', verifyToken, async (req, res) => {
             'V': { tableName: 'StockOpname_Hasil_d_CCAkhir', columnName: 'NoCCAkhir', tableH: 'CCAkhir_h', isColumn: 'IsCCAkhir' },
             'W': { tableName: 'StockOpname_Hasil_d_Sanding', columnName: 'NoSanding', tableH: 'Sanding_h', isColumn: 'IsSanding' },
             'I': { tableName: 'StockOpname_Hasil_d_BJ', columnName: 'NoBJ', tableH: 'BarangJadi_h', isColumn: 'IsBJ' },
-            // 'A': { tableName: 'StockOpname_Hasil_d_KayuBulat', columnName: 'NoKayuBulat', tableH: 'KayuBulat_h', isColumn: 'IsKB' }
         };
 
         const tableInfo = tableMap[firstChar];
@@ -406,8 +400,6 @@ router.post('/no-stock-opname/:noso/scan', verifyToken, async (req, res) => {
             if (otherTableCheck) {
                 return res.status(otherTableCheck.status).json({ message: otherTableCheck.message });
             }
-
-            // return res.status(409).json({ message: 'Label Sudah Di Nonaktifkan di Proses Produksi. Yakin ingin menyimpan?' });
         }
 
 
@@ -467,15 +459,8 @@ router.post('/no-stock-opname/:noso/scan', verifyToken, async (req, res) => {
     } catch (error) {
         console.error('Error inserting/updating data:', error);
         res.status(500).json({ message: 'Failed to insert/update data.', error: error.message });
-    } finally {
-        if (pool) {
-            try {
-                await pool.close();
-            } catch (err) {
-                console.error('Error closing connection pool:', err);
-            }
-        }
     }
+    // ← HAPUS finally block (PERBAIKAN UTAMA)
 });
 
 

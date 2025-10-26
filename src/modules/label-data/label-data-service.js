@@ -1,9 +1,9 @@
-const { sql, connectDb } = require('../../core/config/db');
+const { sql, poolPromise } = require('../../core/config/db');
 const { formatDate, formatTime } = require('../../core/utils/format-utils');
 const moment = require('moment');
 
 exports.getLabelData = async (nolabel) => {
-  const pool = await connectDb();
+  const pool = await poolPromise;  // ← gunakan poolPromise
   const request = pool.request().input('nolabel', sql.NVarChar, nolabel);
 
   if (nolabel.startsWith('E')) {

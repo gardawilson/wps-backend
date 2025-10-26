@@ -1,4 +1,4 @@
-const { sql, connectDb } = require('../../core/config/db');
+const { sql, poolPromise } = require('../../core/config/db');
 require('dotenv').config();
 const getLocalIp = require('../../core/utils/get-local-ip');
 const fs = require("fs");
@@ -8,7 +8,7 @@ const path = require("path");
 
 // Ambil semua data
 exports.getAll = async () => {
-  const pool = await connectDb();
+  const pool = await poolPromise;  // ← gunakan poolPromise
   const result = await pool.request().query(`
     SELECT TOP 1000 
       NoKayuBulat, NoPlat, IdJenisKayu, IdSupplier, IdPengukuran, 
@@ -22,7 +22,7 @@ exports.getAll = async () => {
 
 // Ambil berdasarkan ID
 exports.getById = async (noKayuBulat) => {
-  const pool = await connectDb();
+  const pool = await poolPromise;  // ← gunakan poolPromise
   const result = await pool.request()
     .input('NoKayuBulat', sql.VarChar, noKayuBulat)
     .query(`SELECT * FROM KayuBulat_h WHERE NoKayuBulat = @NoKayuBulat`);
@@ -31,7 +31,7 @@ exports.getById = async (noKayuBulat) => {
 
 // Tambah data baru
 exports.create = async (data) => {
-  const pool = await connectDb();
+  const pool = await poolPromise;  // ← gunakan poolPromise
   const query = `
     INSERT INTO KayuBulat_h
       (NoKayuBulat, NoPlat, IdJenisKayu, IdSupplier, IdPengukuran, NoTruk, JenisTruk, DateCreate, Pengurangan, DateUsage, Suket, Approve, ApprovedBy, ApproveDate, IdTanah, IdSupplierAsalKayu)
@@ -61,7 +61,7 @@ exports.create = async (data) => {
 
 // Update data
 exports.update = async (noKayuBulat, data) => {
-  const pool = await connectDb();
+  const pool = await poolPromise;  // ← gunakan poolPromise
   const result = await pool.request()
     .input('NoKayuBulat', sql.VarChar, noKayuBulat)
     .input('NoPlat', sql.VarChar, data.NoPlat)
@@ -92,7 +92,7 @@ exports.update = async (noKayuBulat, data) => {
 
 // Hapus data
 exports.remove = async (noKayuBulat) => {
-  const pool = await connectDb();
+  const pool = await poolPromise;  // ← gunakan poolPromise
   const result = await pool.request()
     .input('NoKayuBulat', sql.VarChar, noKayuBulat)
     .query(`DELETE FROM KayuBulat_h WHERE NoKayuBulat=@NoKayuBulat`);
@@ -103,7 +103,7 @@ exports.remove = async (noKayuBulat) => {
 // Save image
 // Save or replace image
 exports.saveImage = async ({ noKayuBulat, tier, imageName, pcs }) => {
-  const pool = await connectDb();
+  const pool = await poolPromise;  // ← gunakan poolPromise
 
   // 1. Cari file lama kalau ada
   const oldFile = await pool.request()
@@ -145,7 +145,7 @@ exports.saveImage = async ({ noKayuBulat, tier, imageName, pcs }) => {
 
 // Save video
 exports.saveVideo = async ({ noKayuBulat, noUrut, videoName, remark, videoThumbnail }) => {
-  const pool = await connectDb();
+  const pool = await poolPromise;  // ← gunakan poolPromise
 
   // 1. Cari file lama kalau ada
   const oldFile = await pool.request()
@@ -195,7 +195,7 @@ exports.saveVideo = async ({ noKayuBulat, noUrut, videoName, remark, videoThumbn
 
 // Ambil semua attachment berdasarkan NoKayuBulat
 exports.getAttachments = async (noKayuBulat) => {
-  const pool = await connectDb();
+  const pool = await poolPromise;  // ← gunakan poolPromise
 
   // Ambil gambar
   const resultImages = await pool.request()
@@ -244,7 +244,7 @@ exports.getAttachments = async (noKayuBulat) => {
 
 // Update image data tanpa FILE
 exports.updateImageData = async ({ noKayuBulat, tier, pcs, note }) => {
-  const pool = await connectDb();
+  const pool = await poolPromise;  // ← gunakan poolPromise
   await pool.request()
     .input('NoKayuBulat', sql.VarChar, noKayuBulat)
     .input('Tier', sql.Int, tier)
@@ -258,7 +258,7 @@ exports.updateImageData = async ({ noKayuBulat, tier, pcs, note }) => {
 
 // Update video data tanpa file
 exports.updateVideoData = async ({ noKayuBulat, noUrut, remark }) => {
-  const pool = await connectDb();
+  const pool = await poolPromise;  // ← gunakan poolPromise
   await pool.request()
     .input('NoKayuBulat', sql.VarChar, noKayuBulat)
     .input('NoUrut', sql.Int, noUrut)
@@ -273,7 +273,7 @@ exports.updateVideoData = async ({ noKayuBulat, noUrut, remark }) => {
 
 // DELETE IMAGE
 exports.deleteImage = async ({ noKayuBulat, tier }) => {
-  const pool = await connectDb();
+  const pool = await poolPromise;  // ← gunakan poolPromise
   const result = await pool.request()
     .input("NoKayuBulat", sql.VarChar, noKayuBulat)
     .input("Tier", sql.Int, tier)
@@ -297,7 +297,7 @@ exports.deleteImage = async ({ noKayuBulat, tier }) => {
 
 // DELETE VIDEO
 exports.deleteVideo = async ({ noKayuBulat, noUrut }) => {
-  const pool = await connectDb();
+  const pool = await poolPromise;  // ← gunakan poolPromise
 
   // 1. Ambil nama file & thumbnail
   const result = await pool.request()
@@ -338,6 +338,3 @@ exports.deleteVideo = async ({ noKayuBulat, noUrut }) => {
     data: { noKayuBulat, noUrut, fileName, thumbName },
   };
 };
-
-
-

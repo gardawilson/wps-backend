@@ -1,6 +1,6 @@
 const crypto = require('crypto');
 
-exports.hashPassword = (password) => {
+function hashPassword(password) {
   try {
     const md5 = crypto.createHash('md5').update(password).digest();
     const key = Buffer.concat([md5, md5.slice(0, 8)]);
@@ -14,4 +14,6 @@ exports.hashPassword = (password) => {
     console.error('Error hashing password:', err);
     return null;
   }
-};
+}
+
+module.exports = { hashPassword };

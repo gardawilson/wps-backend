@@ -1,7 +1,7 @@
 const express = require('express');
 const verifyToken = require('../../core/middleware/verify-token');
 const moment = require('moment');
-const { sql, connectDb } = require('../../core/config/db');
+const { sql, poolPromise } = require('../../core/config/db');
 const router = express.Router();
 
 const formatDate = (date) => {
@@ -12,9 +12,10 @@ const formatDate = (date) => {
 // Route untuk mendapatkan Nomor Nyangkut
 router.get('/nyangkut-list', verifyToken, async (req, res) => {
   try {
-    await connectDb();
+    const pool = await poolPromise;  // ← await poolPromise
+    const request = pool.request();   // ← pool.request()
 
-    const result = await sql.query('SELECT [NoNyangkut], [Tgl] FROM [dbo].[Nyangkut_h] WHERE [Tgl] > (SELECT MAX(PeriodHarian) FROM [dbo].[MstTutupTransaksiHarian]) ORDER BY [NoNyangkut] DESC');
+    const result = await request.query('SELECT [NoNyangkut], [Tgl] FROM [dbo].[Nyangkut_h] WHERE [Tgl] > (SELECT MAX(PeriodHarian) FROM [dbo].[MstTutupTransaksiHarian]) ORDER BY [NoNyangkut] DESC');
 
     if (!result.recordset || result.recordset.length === 0) {
       return res.status(404).json({ message: 'Tidak Label Yang Nyangkut saat ini' });
@@ -59,10 +60,10 @@ router.get('/label-nyangkut/:nonyangkut', verifyToken, async (req, res) => {
     });
   }
 
-  let pool;
   try {
-    pool = await connectDb();
-    const request = new sql.Request(pool);
+    const pool = await poolPromise;  // ← await poolPromise
+    const request = pool.request();   // ← pool.request()
+    
     request.input('nonyangkut', sql.VarChar, nonyangkut);
     if (idlokasi && idlokasi !== 'all') {
       request.input('idlokasi', sql.VarChar, idlokasi);
@@ -216,32 +217,27 @@ router.get('/label-nyangkut/:nonyangkut', verifyToken, async (req, res) => {
       message: 'Internal Server Error',
       error: error.message
     });
-  } finally {
-    if (pool) await pool.close();
   }
+  // ← HAPUS finally block
 });
 
 
 
 const checkInOtherTables = async (request, label) => {
-  // Menentukan tipe tabel berdasarkan tipe label
   let tablesToCheck = [];
   let columnToSearch = '';
 
-  // Menentukan tabel dan kolom yang relevan berdasarkan kode pertama pada label
   const firstChar = label.charAt(0).toUpperCase();
 
   if (firstChar === 'E') {
-    // Jika 'E', gunakan tabel-tabel untuk S4SProduksiInputST, AdjustmentInputST, BongkarSusunInputST
     tablesToCheck = [
       { tableName: "S4SProduksiInputST", column: "NoProduksi" },
       { tableName: "AdjustmentInputST", column: "NoAdjustment" },
       { tableName: "BongkarSusunInputST", column: "NoBongkarSusun" }
     ];
-    columnToSearch = 'NoST'; // Menetapkan kolom pencarian untuk 'E'
+    columnToSearch = 'NoST';
 
   } else if (firstChar === 'R') {
-    // Jika 'R', gunakan tabel-tabel untuk S4SProduksiInputS4S, FJProduksiInputS4S, dll.
     tablesToCheck = [
       { tableName: "S4SProduksiInputS4S", column: "NoProduksi" },
       { tableName: "FJProduksiInputS4S", column: "NoProduksi" },
@@ -249,7 +245,7 @@ const checkInOtherTables = async (request, label) => {
       { tableName: "AdjustmentInputS4S", column: "NoAdjustment" },
       { tableName: "BongkarSusunInputS4S", column: "NoBongkarSusun" }
     ];
-    columnToSearch = 'NoS4S'; // Menetapkan kolom pencarian untuk 'R'
+    columnToSearch = 'NoS4S';
 
   } else if (firstChar === 'S') {
     tablesToCheck = [
@@ -316,11 +312,9 @@ const checkInOtherTables = async (request, label) => {
     columnToSearch = 'NoBJ';
 
   } else {
-    // Jika label bukan 'E' atau 'R', bisa menambahkan logika lain atau handling error
     return { message: 'Invalid label type', status: 400 };
   }
 
-  // Pengecekan tabel sesuai dengan daftar yang sudah ditentukan
   for (let table of tablesToCheck) {
     const checkQuery = `
           SELECT ${table.column}
@@ -331,16 +325,16 @@ const checkInOtherTables = async (request, label) => {
     const resultCheck = await request.query(checkQuery);
 
     if (resultCheck.recordset.length > 0) {
-      const value = resultCheck.recordset[0][table.column]; // Ambil nilai kolom yang sesuai
+      const value = resultCheck.recordset[0][table.column];
       return {
         message: `Label sudah di Proses pada Nomor ${value}!`,
         status: 409,
-        value: value // Kembalikan nilai kolom yang ditemukan
+        value: value
       };
     }
   }
 
-  return null; // Tidak ada masalah
+  return null;
 };
 
 
@@ -374,10 +368,10 @@ router.post('/label-nyangkut/:nonyangkut', verifyToken, async (req, res) => {
     return res.status(400).json({ message: 'Awalan label tidak valid.' });
   }
 
-  let pool;
   try {
-    pool = await connectDb();
-    const request = new sql.Request(pool);
+    const pool = await poolPromise;  // ← await poolPromise
+    const request = pool.request();   // ← pool.request()
+    
     request.input('nonyangkut', sql.VarChar, nonyangkut);
     request.input('label', sql.VarChar, label);
 
@@ -413,16 +407,10 @@ router.post('/label-nyangkut/:nonyangkut', verifyToken, async (req, res) => {
     const usage = usageResult.recordset[0];
 
     if (usage && usage.DateUsage !== null) {
-      // return res.status(400).json({
-      //   message: 'Label ini sudah digunakan (DateUsage sudah terisi). Tidak bisa ditambahkan.',
-      // });
-
-      // Pengecekan pada tabel lain
       const otherTableCheck = await checkInOtherTables(request, label);
       if (otherTableCheck) {
         return res.status(otherTableCheck.status).json({ message: otherTableCheck.message });
       }
-
     }
 
     // ✅ Cek duplikat di NoNyangkut yang sama
@@ -452,9 +440,8 @@ router.post('/label-nyangkut/:nonyangkut', verifyToken, async (req, res) => {
   } catch (error) {
     console.error('Error insert label:', error);
     return res.status(500).json({ message: 'Gagal menyimpan data.', error: error.message });
-  } finally {
-    if (pool) await pool.close();
   }
+  // ← HAPUS finally block
 });
 
 
@@ -486,10 +473,10 @@ router.put('/label-nyangkut/lancar/:label', verifyToken, async (req, res) => {
     return res.status(400).json({ message: 'Awalan label tidak valid.' });
   }
 
-  let pool;
   try {
-    pool = await connectDb();
-    const request = new sql.Request(pool);
+    const pool = await poolPromise;  // ← await poolPromise
+    const request = pool.request();   // ← pool.request()
+    
     request.input('label', sql.VarChar, label);
     request.input('now', sql.DateTime, new Date());
 
@@ -525,16 +512,9 @@ router.put('/label-nyangkut/lancar/:label', verifyToken, async (req, res) => {
   } catch (error) {
     console.error('Error update lancar:', error);
     return res.status(500).json({ message: 'Gagal update DateLancar.', error: error.message });
-  } finally {
-    if (pool) await pool.close();
   }
+  // ← HAPUS finally block
 });
-
-
-
-
-
-
 
 
 module.exports = router;

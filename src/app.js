@@ -13,6 +13,9 @@ const nyangkutRoutes = require('./modules/nyangkut/nyangkut-routes');
 const mstLokasiRoutes = require('./modules/locations/locations-routes');
 const bongkarKdRoutes = require('./modules/bongkar-kd/bongkar-kd-routes');
 const kayuBulatRoutes = require('./modules/kayu-bulat/kayu-bulat-routes');
+const qcSawmill = require('./modules/qc-sawmill/qc-sawmill-routes');
+const jenisKayu = require('./modules/jenis-kayu/jenis-kayu-routes');
+const mesinSawmill = require('./modules/mesin-sawmill/mesin-sawmill-routes');
 
 const app = express();
 
@@ -37,5 +40,8 @@ app.use('/api', nyangkutRoutes);
 app.use('/api', mstLokasiRoutes);
 app.use('/api', bongkarKdRoutes);
 app.use('/api', kayuBulatRoutes);
+app.use('/api/qc-sawmill', qcSawmill);
+app.use('/api/jenis-kayu', jenisKayu);
+app.use('/api/mesin-sawmill', mesinSawmill);
 
 module.exports = app;

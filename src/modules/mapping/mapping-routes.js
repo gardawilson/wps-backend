@@ -1,7 +1,7 @@
 const express = require('express');
 const verifyToken = require('../../core/middleware/verify-token');
 const moment = require('moment');
-const { sql, connectDb } = require('../../core/config/db');
+const { sql, poolPromise } = require('../../core/config/db');
 const router = express.Router();
 
 const formatDate = (date) => {
@@ -24,10 +24,10 @@ router.get('/label-list/', verifyToken, async (req, res) => {
         return res.status(400).json({ message: 'Page and pageSize must be positive numbers.' });
     }
 
-    let pool;
     try {
-        pool = await connectDb();
-        const request = new sql.Request(pool);
+        const pool = await poolPromise;  // ← await poolPromise
+        const request = pool.request();   // ← pool.request()
+        
         request.input('username', sql.VarChar, username);
         if (idlokasi) request.input('idlokasi', sql.VarChar, idlokasi);
 
@@ -49,7 +49,6 @@ router.get('/label-list/', verifyToken, async (req, res) => {
             const selected = filterMap[filterBy];
             if (!selected) return res.status(400).json({ message: "Invalid filterBy value" });
 
-            // Modified WHERE clause to include EXISTS condition for detail data
             const whereClause = `WHERE h.DateUsage IS NULL 
                                 ${idlokasi && idlokasi !== 'all' ? "AND h.IdLokasi = @idlokasi" : ""} 
                                 AND EXISTS (
@@ -80,7 +79,6 @@ router.get('/label-list/', verifyToken, async (req, res) => {
             labelHeaders = labelHeaderResult.recordset;
             totalCountQuery = totalResult.recordset[0].total;
         } else {
-            // Modified all label queries to include EXISTS condition for detail data
             const allLabelQueries = Object.values(filterMap).map(f => {
                 const selectUOMLebar = f.hasUOM ? 'h.IdUOMTblLebar' : '1 AS IdUOMTblLebar';
                 const selectUOMPanjang = f.hasUOM ? 'h.IdUOMPanjang' : '1 AS IdUOMPanjang';
@@ -106,7 +104,6 @@ router.get('/label-list/', verifyToken, async (req, res) => {
                 OFFSET ${offset} ROWS FETCH NEXT ${pageSize} ROWS ONLY;
             `;
 
-            // Modified total query to include EXISTS condition
             const totalQuery = `
                 SELECT SUM(total) AS total FROM (
                     ${Object.values(filterMap).map(f => `
@@ -148,7 +145,6 @@ router.get('/label-list/', verifyToken, async (req, res) => {
 
         const labelNos = labelHeaders.map(l => `'${l.CombinedLabel}'`).join(",");
         
-        // Query for paginated detail data
         const allDetailQueries = Object.values(filterMap).map(f => {
             return `
                 SELECT h.${f.column} AS CombinedLabel, '${f.type}' AS LabelType,
@@ -161,7 +157,6 @@ router.get('/label-list/', verifyToken, async (req, res) => {
             `;
         });
 
-        // Modified summary queries to include EXISTS condition
         const allDetailQueriesForSummary = Object.values(filterMap).map(f => {
             const whereClause = `WHERE h.DateUsage IS NULL 
                                ${idlokasi && idlokasi !== 'all' ? "AND h.IdLokasi = @idlokasi" : ""}
@@ -216,11 +211,8 @@ router.get('/label-list/', verifyToken, async (req, res) => {
         const groupedData = {};
         const labelOrder = [];
 
-        // Initialize variables for paginated data calculation
         let totalM3Overall = 0;
         let totalJumlahOverall = 0;
-
-        // Calculate summary totals from ALL data (not limited by pagination)
         let summaryTotalM3 = 0;
         let summaryTotalJumlah = 0;
 
@@ -233,19 +225,14 @@ router.get('/label-list/', verifyToken, async (req, res) => {
             
             let rowM3 = 0;
             
-            // Check if label type is ST (Sawn Timber)
             if (row.LabelType === 'Sawn Timber') {
-                // ST calculation
-                if (idUOMTblLebar === 1) { // Jika menggunakan milimeter
+                if (idUOMTblLebar === 1) {
                     rowM3 = ((tebal * lebar * panjang * pcs * 304.8 / 1000000000 / 1.416 * 10000) / 10000) * 1.416;
-                } else { // Satuan lainnya
+                } else {
                     rowM3 = ((tebal * lebar * panjang * pcs / 7200.8 * 10000) / 10000) * 1.416;
                 }
-                
-                // Membulatkan ke 4 desimal
                 rowM3 = Math.floor(rowM3 * 10000) / 10000;
             } else {
-                // Non-ST calculation
                 rowM3 = (tebal * lebar * panjang * pcs) / 1000000000.0;
                 rowM3 = Math.floor(rowM3 * 10000) / 10000;
             }
@@ -283,7 +270,6 @@ router.get('/label-list/', verifyToken, async (req, res) => {
             const label = groupedData[labelKey];
             label.Details.sort((a, b) => a.NoUrut - b.NoUrut);
             
-            // Calculate M3 for each label
             let labelM3 = 0;
             let labelJumlah = 0;
             
@@ -296,19 +282,14 @@ router.get('/label-list/', verifyToken, async (req, res) => {
                 
                 let rowM3 = 0;
                 
-                // Check if label type is ST (Sawn Timber)
                 if (label.LabelType === 'Sawn Timber') {
-                    // ST calculation
-                    if (idUOMTblLebar === 1) { // Jika menggunakan milimeter
+                    if (idUOMTblLebar === 1) {
                         rowM3 = ((tebal * lebar * panjang * pcs * 304.8 / 1000000000 / 1.416 * 10000) / 10000) * 1.416;
-                    } else { // Satuan lainnya
+                    } else {
                         rowM3 = ((tebal * lebar * panjang * pcs / 7200.8 * 10000) / 10000) * 1.416;
                     }
-                    
-                    // Membulatkan ke 4 desimal
                     rowM3 = Math.floor(rowM3 * 10000) / 10000;
                 } else {
-                    // Non-ST calculation
                     rowM3 = (tebal * lebar * panjang * pcs) / 1000000000.0;
                     rowM3 = Math.floor(rowM3 * 10000) / 10000;
                 }
@@ -325,7 +306,6 @@ router.get('/label-list/', verifyToken, async (req, res) => {
                 };
             });
             
-            // Add to overall totals
             totalM3Overall += labelM3;
             totalJumlahOverall += labelJumlah;
             
@@ -353,9 +333,8 @@ router.get('/label-list/', verifyToken, async (req, res) => {
     } catch (error) {
         console.error('Error in label-list endpoint:', error);
         res.status(500).json({ message: 'Internal Server Error', error: error.message });
-    } finally {
-        if (pool) await pool.close();
     }
+    // ← HAPUS finally block
 });
 
 
@@ -363,24 +342,20 @@ router.get('/label-list/', verifyToken, async (req, res) => {
 
 // Fungsi untuk pengecekan lanjutan di tabel lain berdasarkan tipe resultscanned
 const checkInOtherTables = async (request, resultscanned) => {
-    // Menentukan tipe tabel berdasarkan tipe resultscanned
     let tablesToCheck = [];
     let columnToSearch = ''; 
     
-    // Menentukan tabel dan kolom yang relevan berdasarkan kode pertama pada resultscanned
     const firstChar = resultscanned.charAt(0).toUpperCase();
 
     if (firstChar === 'E') {
-        // Jika 'E', gunakan tabel-tabel untuk S4SProduksiInputST, AdjustmentInputST, BongkarSusunInputST
         tablesToCheck = [
             { tableName: "S4SProduksiInputST", column: "NoProduksi" },
             { tableName: "AdjustmentInputST", column: "NoAdjustment" },
             { tableName: "BongkarSusunInputST", column: "NoBongkarSusun" }
         ];
-        columnToSearch = 'NoST'; // Menetapkan kolom pencarian untuk 'E'
+        columnToSearch = 'NoST';
 
     } else if (firstChar === 'R') {
-        // Jika 'R', gunakan tabel-tabel untuk S4SProduksiInputS4S, FJProduksiInputS4S, dll.
         tablesToCheck = [
             { tableName: "S4SProduksiInputS4S", column: "NoProduksi" },
             { tableName: "FJProduksiInputS4S", column: "NoProduksi" },
@@ -388,7 +363,7 @@ const checkInOtherTables = async (request, resultscanned) => {
             { tableName: "AdjustmentInputS4S", column: "NoAdjustment" },
             { tableName: "BongkarSusunInputS4S", column: "NoBongkarSusun" }
         ];
-        columnToSearch = 'NoS4S'; // Menetapkan kolom pencarian untuk 'R'
+        columnToSearch = 'NoS4S';
 
     } else if (firstChar === 'S') {
         tablesToCheck = [
@@ -455,11 +430,9 @@ const checkInOtherTables = async (request, resultscanned) => {
         columnToSearch = 'NoBJ'; 
 
     } else {
-        // Jika resultscanned bukan 'E' atau 'R', bisa menambahkan logika lain atau handling error
         return { message: 'Invalid resultscanned type', status: 400 };
     }
 
-    // Pengecekan tabel sesuai dengan daftar yang sudah ditentukan
     for (let table of tablesToCheck) {
         const checkQuery = `
             SELECT ${table.column}
@@ -470,16 +443,16 @@ const checkInOtherTables = async (request, resultscanned) => {
         const resultCheck = await request.query(checkQuery);
 
         if (resultCheck.recordset.length > 0) {
-            const value = resultCheck.recordset[0][table.column]; // Ambil nilai kolom yang sesuai
+            const value = resultCheck.recordset[0][table.column];
             return { 
                 message: `Label sudah di Proses pada Nomor ${value}. Yakin ingin menyimpan?`, 
                 status: 409,
-                value: value // Kembalikan nilai kolom yang ditemukan
+                value: value
             };
         }
     }
 
-    return null; // Tidak ada masalah
+    return null;
 };
 
 
@@ -487,21 +460,20 @@ const checkInOtherTables = async (request, resultscanned) => {
 // Route untuk pengecekan data berdasarkan No Stock Opname
 router.post('/label-list/check', verifyToken, async (req, res) => {
     const { resultscanned, idlokasi } = req.body;
-    const { username } = req;  // Mengambil username dari request object
+    const { username } = req;
 
     if (!resultscanned || !idlokasi) {
         return res.status(400).json({ message: 'Resultscanned, and idlokasi are required.' });
     }
 
-    let pool;
     try {
-        pool = await connectDb();
-        const request = new sql.Request(pool);
+        const pool = await poolPromise;  // ← await poolPromise
+        const request = pool.request();   // ← pool.request()
+        
         request.input('resultscanned', sql.VarChar, resultscanned);
         request.input('idlokasi', sql.VarChar, idlokasi);
         request.input('username', sql.VarChar, username);
 
-        // Validasi pola resultscanned
         const validPattern = /^[ERSTUVWIA]\.\d{6}$/;
         if (!validPattern.test(resultscanned)) {
             return res.status(400).json({ message: 'Format harus berupa "Kode.xxxxxx"' });
@@ -527,7 +499,6 @@ router.post('/label-list/check', verifyToken, async (req, res) => {
 
         const { columnName, tableH, isColumn } = tableInfo;
 
-        // **Pengecekan apakah resultscanned ada di table yang sesuai**
         const checkResultScannedQuery = `
             SELECT COUNT(*) AS count, MAX(dateusage) AS dateusage
             FROM ${tableH}
@@ -537,14 +508,11 @@ router.post('/label-list/check', verifyToken, async (req, res) => {
         const resultScannedCount = resultScannedCheck.recordset[0].count;
         const dateusage = resultScannedCheck.recordset[0].dateusage;
 
-        // Jika tidak ada data yang cocok, kembalikan pesan bahwa data tidak terdaftar
         if (resultScannedCount === 0) {
             return res.status(404).json({ message: 'Label tidak ada di sistem. Yakin ingin menyimpan?' });
         }
 
-        // Cek untuk dateusage jika ada
         if (dateusage !== null) {
-            // Pengecekan pada tabel lain
             const otherTableCheck = await checkInOtherTables(request, resultscanned);
             if (otherTableCheck) {
                 return res.status(otherTableCheck.status).json({ message: otherTableCheck.message });
@@ -557,6 +525,7 @@ router.post('/label-list/check', verifyToken, async (req, res) => {
         console.error('Error checking data:', error);
         res.status(500).json({ message: 'Failed to check data.', error: error.message });
     }
+    // ← HAPUS finally block
 });
 
 
@@ -568,23 +537,19 @@ router.post('/label-list/save-changes', verifyToken, async (req, res) => {
         return res.status(400).json({ message: 'Resultscanned list and idlokasi are required.' });
     }
 
-    let pool;
     try {
-        pool = await connectDb();
-        const request = new sql.Request(pool);
+        const pool = await poolPromise;  // ← await poolPromise
+        const request = pool.request();   // ← pool.request()
+        
         request.input('idlokasi', sql.VarChar, idlokasi);
         request.input('username', sql.VarChar, username);
 
-        // Loop untuk memproses semua resultscanned
         for (let i = 0; i < resultscannedList.length; i++) {
             const resultscanned = resultscannedList[i];
-
-            // Buat parameter unik untuk setiap iterasi
             const resultscannedParamName = `resultscanned_${i}`;
 
             request.input(resultscannedParamName, sql.VarChar, resultscanned);
 
-            // Validasi pola resultscanned
             const validPattern = /^[ERSTUVWIA]\.\d{6}$/;
             if (!validPattern.test(resultscanned)) {
                 return res.status(400).json({ message: `Format untuk ${resultscanned} harus berupa "Kode.xxxxxx"` });
@@ -610,7 +575,6 @@ router.post('/label-list/save-changes', verifyToken, async (req, res) => {
 
             const { columnName, tableH } = tableInfo;
 
-            // Insert logic untuk menyimpan data
             const updateQuery = `
                 UPDATE ${tableH}
                 SET IdLokasi = @idlokasi
@@ -626,19 +590,9 @@ router.post('/label-list/save-changes', verifyToken, async (req, res) => {
     } catch (error) {
         console.error('Error inserting data:', error);
         res.status(500).json({ message: 'Failed to insert data.', error: error.message });
-    } finally {
-        if (pool) {
-            try {
-                await pool.close();
-            } catch (err) {
-                console.error('Error closing connection pool:', err);
-            }
-        }
     }
+    // ← HAPUS finally block
 });
-
-
-
 
 
 module.exports = router;
