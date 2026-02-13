@@ -1,7 +1,7 @@
-const { sql, poolPromise } = require('../../core/config/db');
+const { sql, poolPromise } = require("../../core/config/db");
 
 exports.getAllLokasi = async () => {
-  const pool = await poolPromise;  // ← gunakan poolPromise
+  const pool = await poolPromise; // ← gunakan poolPromise
   const request = pool.request();
 
   const query = `
