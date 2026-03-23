@@ -1,0 +1,21 @@
+services:
+  app:
+    build: .
+    container_name: wps-backend
+    ports:
+      - "5002:5002"
+    env_file: .env
+    volumes:
+      - ./storage:/app/storage
+    restart: always
+
+  # Uncomment saat Redis dibutuhkan:
+  # redis:
+  #   image: redis:7-alpine
+  #   container_name: wps-redis
+  #   restart: always
+  #   volumes:
+  #     - redis_data:/data
+
+# volumes:
+#   redis_data:
