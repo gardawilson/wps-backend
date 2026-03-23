@@ -31,6 +31,11 @@ app.use(
   express.static(path.join(__dirname, "../storage/kayu-bulat")),
 );
 
+// Health check
+app.get("/health", (_req, res) => {
+  res.json({ status: "ok" });
+});
+
 // API routes
 app.use("/api/auth", authRoutes);
 app.use("/api", stockOpnameRoutes);
