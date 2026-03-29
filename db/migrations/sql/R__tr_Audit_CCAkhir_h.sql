@@ -152,9 +152,21 @@ BEGIN
     /* UPDATE */
     IF EXISTS (SELECT 1 FROM inserted) AND EXISTS (SELECT 1 FROM deleted)
     BEGIN
+      DECLARE @action varchar(50) = 'UPDATE';
+
+      IF EXISTS (
+        SELECT 1
+        FROM inserted i
+        INNER JOIN deleted d ON i.NoCCAkhir = d.NoCCAkhir
+        WHERE ISNULL(i.HasBeenPrinted, 0) <> ISNULL(d.HasBeenPrinted, 0)
+      )
+      BEGIN
+        SET @action = 'PRINT';
+      END
+
       INSERT dbo.AuditTrail(Action, TableName, Actor, RequestId, PK, OldData, NewData)
       SELECT
-        'UPDATE',
+        @action,
         'CCAkhir_h',
         @actor,
         @rid,
