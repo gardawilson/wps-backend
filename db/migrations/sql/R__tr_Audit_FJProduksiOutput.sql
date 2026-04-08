@@ -74,7 +74,7 @@ BEGIN
     BEGIN
       INSERT dbo.AuditTrail(Action, TableName, Actor, RequestId, PK, OldData, NewData)
       SELECT
-        'INSERT',
+        'PRODUCE',
         'FJProduksiOutput',
         @actor,
         @rid,
@@ -95,7 +95,7 @@ BEGIN
     BEGIN
       INSERT dbo.AuditTrail(Action, TableName, Actor, RequestId, PK, OldData, NewData)
       SELECT
-        'DELETE',
+        'UNPRODUCE',
         'FJProduksiOutput',
         @actor,
         @rid,

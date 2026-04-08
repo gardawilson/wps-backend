@@ -1,6 +1,6 @@
-/* ===== [dbo].[tr_Audit_BongkarSusunOutputS4S] ON [dbo].[BongkarSusunOutputS4S] ===== */
-CREATE OR ALTER TRIGGER [dbo].[tr_Audit_BongkarSusunOutputS4S]
-ON [dbo].[BongkarSusunOutputS4S]
+/* ===== [dbo].[tr_Audit_BongkarSusunOutputST] ON [dbo].[BongkarSusunOutputST] ===== */
+CREATE OR ALTER TRIGGER [dbo].[tr_Audit_BongkarSusunOutputST]
+ON [dbo].[BongkarSusunOutputST]
 AFTER INSERT, UPDATE, DELETE
 AS
 BEGIN
@@ -19,17 +19,17 @@ BEGIN
 
     /* =========================================================
        Helper: bentuk PK ringkas (single / list)
-       PK yang dipakai: NoBongkarSusun + NoS4S
-       - single: {"NoBongkarSusun":"...","NoS4S":"..."}
-       - multi : {"PKList":[{"NoBongkarSusun":"...","NoS4S":"..."}, ...]}
+       PK yang dipakai: NoBongkarSusun + NoST
+       - single: {"NoBongkarSusun":"...","NoST":"..."}
+       - multi : {"PKList":[{"NoBongkarSusun":"...","NoST":"..."}, ...]}
     ========================================================= */
     DECLARE @pkMax int = COALESCE(NULLIF(COL_LENGTH('dbo.AuditTrail','PK') / 2, 0), 800);
     DECLARE @pk nvarchar(max);
 
     ;WITH x AS (
-      SELECT NoBongkarSusun, NoS4S FROM inserted
+      SELECT NoBongkarSusun, NoST FROM inserted
       UNION
-      SELECT NoBongkarSusun, NoS4S FROM deleted
+      SELECT NoBongkarSusun, NoST FROM deleted
     )
     SELECT
       @pk =
@@ -37,13 +37,13 @@ BEGIN
           WHEN COUNT(1) = 1
             THEN CONCAT(
               '{"NoBongkarSusun":"', MAX(NoBongkarSusun),
-              '","NoS4S":"', MAX(NoS4S),
+              '","NoST":"', MAX(NoST),
               '"}'
             )
           ELSE
             CONCAT(
               '{"PKList":',
-              (SELECT NoBongkarSusun, NoS4S FROM x ORDER BY NoBongkarSusun, NoS4S FOR JSON PATH),
+              (SELECT NoBongkarSusun, NoST FROM x ORDER BY NoBongkarSusun, NoST FOR JSON PATH),
               '}'
             )
         END
@@ -52,9 +52,9 @@ BEGIN
     IF @pk IS NOT NULL AND LEN(@pk) > @pkMax
     BEGIN
       ;WITH x AS (
-        SELECT NoBongkarSusun, NoS4S FROM inserted
+        SELECT NoBongkarSusun, NoST FROM inserted
         UNION
-        SELECT NoBongkarSusun, NoS4S FROM deleted
+        SELECT NoBongkarSusun, NoST FROM deleted
       )
       SELECT
         @pk = CONCAT(
@@ -75,7 +75,7 @@ BEGIN
       INSERT dbo.AuditTrail(Action, TableName, Actor, RequestId, PK, OldData, NewData)
       SELECT
         'PRODUCE',
-        'BongkarSusunOutputS4S',
+        'BongkarSusunOutputST',
         @actor,
         @rid,
         @pk,
@@ -83,9 +83,9 @@ BEGIN
         (
           SELECT
             i.NoBongkarSusun,
-            i.NoS4S
+            i.NoST
           FROM inserted i
-          ORDER BY i.NoBongkarSusun, i.NoS4S
+          ORDER BY i.NoBongkarSusun, i.NoST
           FOR JSON PATH
         );
     END
@@ -96,16 +96,16 @@ BEGIN
       INSERT dbo.AuditTrail(Action, TableName, Actor, RequestId, PK, OldData, NewData)
       SELECT
         'UNPRODUCE',
-        'BongkarSusunOutputS4S',
+        'BongkarSusunOutputST',
         @actor,
         @rid,
         @pk,
         (
           SELECT
             d.NoBongkarSusun,
-            d.NoS4S
+            d.NoST
           FROM deleted d
-          ORDER BY d.NoBongkarSusun, d.NoS4S
+          ORDER BY d.NoBongkarSusun, d.NoST
           FOR JSON PATH
         ),
         NULL;
@@ -117,30 +117,30 @@ BEGIN
       INSERT dbo.AuditTrail(Action, TableName, Actor, RequestId, PK, OldData, NewData)
       SELECT
         'UPDATE',
-        'BongkarSusunOutputS4S',
+        'BongkarSusunOutputST',
         @actor,
         @rid,
         @pk,
         (
           SELECT
             d.NoBongkarSusun,
-            d.NoS4S
+            d.NoST
           FROM deleted d
-          ORDER BY d.NoBongkarSusun, d.NoS4S
+          ORDER BY d.NoBongkarSusun, d.NoST
           FOR JSON PATH
         ),
         (
           SELECT
             i.NoBongkarSusun,
-            i.NoS4S
+            i.NoST
           FROM inserted i
-          ORDER BY i.NoBongkarSusun, i.NoS4S
+          ORDER BY i.NoBongkarSusun, i.NoST
           FOR JSON PATH
         );
     END
   END TRY
   BEGIN CATCH
-    PRINT CONCAT('[AUDIT_WARN][tr_Audit_BongkarSusunOutputS4S] ', ERROR_MESSAGE());
+    PRINT CONCAT('[AUDIT_WARN][tr_Audit_BongkarSusunOutputST] ', ERROR_MESSAGE());
   END CATCH
 END;
 GO

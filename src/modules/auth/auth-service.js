@@ -1,15 +1,15 @@
 // src/features/auth/auth-service.js
-const { sql, poolPromise } = require('../../core/config/db');
-const { hashPassword } = require('../../core/utils/crypto-helper');
+const { sql, poolPromise } = require("../../core/config/db");
+const { hashPassword } = require("../../core/utils/crypto-helper");
 
 async function verifyUser(username, password) {
-  const pool = await poolPromise;                 // ← ini sekarang valid
+  const pool = await poolPromise; // ← ini sekarang valid
   const hashedPassword = hashPassword(password);
 
-  const result = await pool.request()
-    .input('username', sql.VarChar, username)
-    .input('password', sql.VarChar, hashedPassword)
-    .query(`
+  const result = await pool
+    .request()
+    .input("username", sql.VarChar, username)
+    .input("password", sql.VarChar, hashedPassword).query(`
       SELECT TOP 1 
         IdUsername,
         Username,

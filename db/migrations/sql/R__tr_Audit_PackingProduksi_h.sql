@@ -1,6 +1,6 @@
-/* ===== [dbo].[tr_Audit_BongkarSusunOutputS4S] ON [dbo].[BongkarSusunOutputS4S] ===== */
-CREATE OR ALTER TRIGGER [dbo].[tr_Audit_BongkarSusunOutputS4S]
-ON [dbo].[BongkarSusunOutputS4S]
+/* ===== [dbo].[tr_Audit_PackingProduksi_h] ON [dbo].[PackingProduksi_h] ===== */
+CREATE OR ALTER TRIGGER [dbo].[tr_Audit_PackingProduksi_h]
+ON [dbo].[PackingProduksi_h]
 AFTER INSERT, UPDATE, DELETE
 AS
 BEGIN
@@ -19,31 +19,27 @@ BEGIN
 
     /* =========================================================
        Helper: bentuk PK ringkas (single / list)
-       PK yang dipakai: NoBongkarSusun + NoS4S
-       - single: {"NoBongkarSusun":"...","NoS4S":"..."}
-       - multi : {"PKList":[{"NoBongkarSusun":"...","NoS4S":"..."}, ...]}
+       PK yang dipakai: NoProduksi
+       - single: {"NoProduksi":"..."}
+       - multi : {"PKList":[{"NoProduksi":"..."}, ...]}
     ========================================================= */
     DECLARE @pkMax int = COALESCE(NULLIF(COL_LENGTH('dbo.AuditTrail','PK') / 2, 0), 800);
     DECLARE @pk nvarchar(max);
 
     ;WITH x AS (
-      SELECT NoBongkarSusun, NoS4S FROM inserted
+      SELECT NoProduksi FROM inserted
       UNION
-      SELECT NoBongkarSusun, NoS4S FROM deleted
+      SELECT NoProduksi FROM deleted
     )
     SELECT
       @pk =
         CASE
           WHEN COUNT(1) = 1
-            THEN CONCAT(
-              '{"NoBongkarSusun":"', MAX(NoBongkarSusun),
-              '","NoS4S":"', MAX(NoS4S),
-              '"}'
-            )
+            THEN CONCAT('{"NoProduksi":"', MAX(NoProduksi), '"}')
           ELSE
             CONCAT(
               '{"PKList":',
-              (SELECT NoBongkarSusun, NoS4S FROM x ORDER BY NoBongkarSusun, NoS4S FOR JSON PATH),
+              (SELECT NoProduksi FROM x ORDER BY NoProduksi FOR JSON PATH),
               '}'
             )
         END
@@ -52,15 +48,15 @@ BEGIN
     IF @pk IS NOT NULL AND LEN(@pk) > @pkMax
     BEGIN
       ;WITH x AS (
-        SELECT NoBongkarSusun, NoS4S FROM inserted
+        SELECT NoProduksi FROM inserted
         UNION
-        SELECT NoBongkarSusun, NoS4S FROM deleted
+        SELECT NoProduksi FROM deleted
       )
       SELECT
         @pk = CONCAT(
           '{"PKListSummary":{"Count":', COUNT(1),
-          ',"FirstNoBongkarSusun":"', MIN(NoBongkarSusun),
-          '","LastNoBongkarSusun":"', MAX(NoBongkarSusun), '"}}'
+          ',"First":"', MIN(NoProduksi),
+          '","Last":"', MAX(NoProduksi), '"}}'
         )
       FROM x;
     END;
@@ -74,18 +70,24 @@ BEGIN
     BEGIN
       INSERT dbo.AuditTrail(Action, TableName, Actor, RequestId, PK, OldData, NewData)
       SELECT
-        'PRODUCE',
-        'BongkarSusunOutputS4S',
+        'INSERT',
+        'PackingProduksi_h',
         @actor,
         @rid,
         @pk,
         NULL,
         (
           SELECT
-            i.NoBongkarSusun,
-            i.NoS4S
+            i.NoProduksi,
+            i.Shift,
+            i.Tanggal,
+            i.IdMesin,
+            i.IdOperator,
+            i.JamKerja,
+            i.JmlhAnggota,
+            i.HourMeter
           FROM inserted i
-          ORDER BY i.NoBongkarSusun, i.NoS4S
+          ORDER BY i.NoProduksi
           FOR JSON PATH
         );
     END
@@ -95,17 +97,23 @@ BEGIN
     BEGIN
       INSERT dbo.AuditTrail(Action, TableName, Actor, RequestId, PK, OldData, NewData)
       SELECT
-        'UNPRODUCE',
-        'BongkarSusunOutputS4S',
+        'DELETE',
+        'PackingProduksi_h',
         @actor,
         @rid,
         @pk,
         (
           SELECT
-            d.NoBongkarSusun,
-            d.NoS4S
+            d.NoProduksi,
+            d.Shift,
+            d.Tanggal,
+            d.IdMesin,
+            d.IdOperator,
+            d.JamKerja,
+            d.JmlhAnggota,
+            d.HourMeter
           FROM deleted d
-          ORDER BY d.NoBongkarSusun, d.NoS4S
+          ORDER BY d.NoProduksi
           FOR JSON PATH
         ),
         NULL;
@@ -117,30 +125,42 @@ BEGIN
       INSERT dbo.AuditTrail(Action, TableName, Actor, RequestId, PK, OldData, NewData)
       SELECT
         'UPDATE',
-        'BongkarSusunOutputS4S',
+        'PackingProduksi_h',
         @actor,
         @rid,
         @pk,
         (
           SELECT
-            d.NoBongkarSusun,
-            d.NoS4S
+            d.NoProduksi,
+            d.Shift,
+            d.Tanggal,
+            d.IdMesin,
+            d.IdOperator,
+            d.JamKerja,
+            d.JmlhAnggota,
+            d.HourMeter
           FROM deleted d
-          ORDER BY d.NoBongkarSusun, d.NoS4S
+          ORDER BY d.NoProduksi
           FOR JSON PATH
         ),
         (
           SELECT
-            i.NoBongkarSusun,
-            i.NoS4S
+            i.NoProduksi,
+            i.Shift,
+            i.Tanggal,
+            i.IdMesin,
+            i.IdOperator,
+            i.JamKerja,
+            i.JmlhAnggota,
+            i.HourMeter
           FROM inserted i
-          ORDER BY i.NoBongkarSusun, i.NoS4S
+          ORDER BY i.NoProduksi
           FOR JSON PATH
         );
     END
   END TRY
   BEGIN CATCH
-    PRINT CONCAT('[AUDIT_WARN][tr_Audit_BongkarSusunOutputS4S] ', ERROR_MESSAGE());
+    PRINT CONCAT('[AUDIT_WARN][tr_Audit_PackingProduksi_h] ', ERROR_MESSAGE());
   END CATCH
 END;
 GO

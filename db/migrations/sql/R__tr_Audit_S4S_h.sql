@@ -108,6 +108,8 @@
       IF EXISTS (SELECT 1 FROM inserted) AND EXISTS (SELECT 1 FROM deleted)
       BEGIN
         DECLARE @action varchar(50) = 'UPDATE';
+        DECLARE @oldData nvarchar(max);
+        DECLARE @newData nvarchar(max);
 
         IF EXISTS (
           SELECT 1
@@ -118,15 +120,61 @@
         BEGIN
           SET @action = 'PRINT';
         END
+        ELSE IF EXISTS (
+          SELECT 1
+          FROM inserted i
+          INNER JOIN deleted d ON i.NoS4S = d.NoS4S
+          WHERE ISNULL(i.IdLokasi, '') <> ISNULL(d.IdLokasi, '')
+        )
+          AND NOT EXISTS (
+            SELECT 1
+            FROM inserted i
+            INNER JOIN deleted d ON i.NoS4S = d.NoS4S
+            WHERE
+              ISNULL(i.IdJenisKayu, '') <> ISNULL(d.IdJenisKayu, '')
+              OR ISNULL(i.IdGrade, '') <> ISNULL(d.IdGrade, '')
+              OR ISNULL(i.IdOrgTelly, '') <> ISNULL(d.IdOrgTelly, '')
+              OR ISNULL(i.DateCreate, '1900-01-01') <> ISNULL(d.DateCreate, '1900-01-01')
+              OR ISNULL(i.DateUsage, '1900-01-01') <> ISNULL(d.DateUsage, '1900-01-01')
+              OR ISNULL(i.NoSTAsal, '') <> ISNULL(d.NoSTAsal, '')
+              OR ISNULL(i.IdUOMTblLebar, '') <> ISNULL(d.IdUOMTblLebar, '')
+              OR ISNULL(i.IdUOMPanjang, '') <> ISNULL(d.IdUOMPanjang, '')
+              OR ISNULL(i.NoSPK, '') <> ISNULL(d.NoSPK, '')
+              OR ISNULL(i.Jam, '00:00:00.000') <> ISNULL(d.Jam, '00:00:00.000')
+              OR ISNULL(i.IsReject, 0) <> ISNULL(d.IsReject, 0)
+              OR ISNULL(i.IdWarehouse, '') <> ISNULL(d.IdWarehouse, '')
+              OR ISNULL(i.IdFJProfile, '') <> ISNULL(d.IdFJProfile, '')
+              OR ISNULL(i.IsLembur, 0) <> ISNULL(d.IsLembur, 0)
+              OR ISNULL(i.HasBeenPrinted, 0) <> ISNULL(d.HasBeenPrinted, 0)
+              OR ISNULL(i.IdFisik, '') <> ISNULL(d.IdFisik, '')
+              OR ISNULL(i.NoSPKAsal, '') <> ISNULL(d.NoSPKAsal, '')
+              OR ISNULL(i.Remark, '') <> ISNULL(d.Remark, '')
+              OR ISNULL(i.LastPrintDate, '1900-01-01') <> ISNULL(d.LastPrintDate, '1900-01-01')
+              OR ISNULL(i.IdWarna, '') <> ISNULL(d.IdWarna, '')
+              OR ISNULL(i.NoSPKTujuan, '') <> ISNULL(d.NoSPKTujuan, '')
+          )
+        BEGIN
+          SET @action = 'MAPPING';
+        END
 
-        INSERT dbo.AuditTrail(Action, TableName, Actor, RequestId, PK, OldData, NewData)
-        SELECT
-          @action,
-          'S4S_h',
-          @actor,
-          @rid,
-          @pk,
-          (
+        IF @action = 'MAPPING'
+        BEGIN
+          SET @oldData = (
+            SELECT d.IdLokasi
+            FROM deleted d
+            ORDER BY d.NoS4S
+            FOR JSON PATH
+          );
+          SET @newData = (
+            SELECT i.IdLokasi
+            FROM inserted i
+            ORDER BY i.NoS4S
+            FOR JSON PATH
+          );
+        END
+        ELSE
+        BEGIN
+          SET @oldData = (
             SELECT
               d.NoS4S, d.IdJenisKayu, d.IdGrade, d.IdOrgTelly, d.DateCreate, d.DateUsage,
               d.NoSTAsal, d.IdUOMTblLebar, d.IdUOMPanjang, d.NoSPK, d.Jam, d.IsReject,
@@ -135,8 +183,8 @@
             FROM deleted d
             ORDER BY d.NoS4S
             FOR JSON PATH
-          ),
-          (
+          );
+          SET @newData = (
             SELECT
               i.NoS4S, i.IdJenisKayu, i.IdGrade, i.IdOrgTelly, i.DateCreate, i.DateUsage,
               i.NoSTAsal, i.IdUOMTblLebar, i.IdUOMPanjang, i.NoSPK, i.Jam, i.IsReject,
@@ -146,6 +194,10 @@
             ORDER BY i.NoS4S
             FOR JSON PATH
           );
+        END
+
+        INSERT dbo.AuditTrail(Action, TableName, Actor, RequestId, PK, OldData, NewData)
+        VALUES (@action, 'S4S_h', @actor, @rid, @pk, @oldData, @newData);
       END
     END TRY
     BEGIN CATCH
@@ -154,3 +206,4 @@
     END CATCH
   END;
   GO
+

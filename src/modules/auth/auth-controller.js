@@ -1,6 +1,6 @@
-const jwt = require('jsonwebtoken');
-const authService = require('./auth-service');
-const getUserPermissions = require('../../core/utils/get-user-permissions');
+const jwt = require("jsonwebtoken");
+const authService = require("./auth-service");
+const getUserPermissions = require("../../core/utils/get-user-permissions");
 
 async function login(req, res) {
   const { username, password } = req.body;
@@ -10,7 +10,7 @@ async function login(req, res) {
     if (!user) {
       return res.status(400).json({
         success: false,
-        message: 'Username atau password salah',
+        message: "Username atau password salah",
       });
     }
 
@@ -23,25 +23,25 @@ async function login(req, res) {
         username: user.Username,
       },
       process.env.SECRET_KEY,
-      { expiresIn: '12h' }
+      { expiresIn: "12h" },
     );
 
     res.status(200).json({
       success: true,
-      message: 'Login berhasil',
+      message: "Login berhasil",
       token,
       user: {
         idUsername: user.IdUsername,
         username: user.Username,
-        fullName: `${user.FName ?? ''} ${user.LName ?? ''}`.trim(),
+        fullName: `${user.FName ?? ""} ${user.LName ?? ""}`.trim(),
         permissions, // ✅ ambil dari helper, bukan query ulang
       },
     });
   } catch (err) {
-    console.error('Login error:', err);
+    console.error("Login error:", err);
     res.status(500).json({
       success: false,
-      message: 'Terjadi kesalahan di server',
+      message: "Terjadi kesalahan di server",
     });
   }
 }
