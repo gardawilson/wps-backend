@@ -18,6 +18,7 @@ const qcSawmill = require("./modules/qc-sawmill/qc-sawmill-routes");
 const jenisKayu = require("./modules/jenis-kayu/jenis-kayu-routes");
 const mesinSawmill = require("./modules/mesin-sawmill/mesin-sawmill-routes");
 const stSawmill = require("./modules/st-sawmill/st-sawmill-route");
+const updateRoutes = require("./modules/update/update-routes");
 
 const app = express();
 
@@ -52,5 +53,6 @@ app.use("/api/qc-sawmill", qcSawmill);
 app.use("/api/jenis-kayu", jenisKayu);
 app.use("/api/mesin-sawmill", mesinSawmill);
 app.use("/api/sawmill", stSawmill);
+app.use("/api/update", updateRoutes);
 
 module.exports = app;

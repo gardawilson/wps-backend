@@ -5,7 +5,7 @@ const auditController = require("./audit-controller");
 const router = express.Router();
 
 router.use(express.json());
-router.use(verifyToken);
+router.use("/audit", verifyToken);
 
 router.get("/audit", auditController.getAuditList);
 router.get("/audit/pk/:pkValue", auditController.getAuditByPkValue);
