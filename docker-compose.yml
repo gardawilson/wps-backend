@@ -2,8 +2,7 @@ services:
   app:
     build: .
     container_name: wps-backend
-    ports:
-      - "5002:5002"
+    network_mode: host
     env_file: .env
     volumes:
       - ./storage:/app/storage
