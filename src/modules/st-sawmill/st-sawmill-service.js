@@ -27,6 +27,7 @@ exports.getProdukSpk = async ({ Tebal, Lebar, IdJenisKayu }) => {
         d.Tebal = @Tebal
         AND d.Lebar = @Lebar
         AND jk.IdJenisKayu = @IdJenisKayu
+        AND spk.IsEnable = 1
     ORDER BY 
         spk.NoSPK ASC,
         h.NamaProduk ASC

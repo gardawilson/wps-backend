@@ -1,81 +1,87 @@
-const express = require('express');
-const verifyToken = require('../../core/middleware/verify-token');
-const kayuBulatController = require('./kayu-bulat-controller');
-const upload = require('../../core/utils/upload-image');
-const uploadVideo = require('../../core/utils/upload-video');
+const express = require("express");
+const verifyToken = require("../../core/middleware/verify-token");
+const kayuBulatController = require("./kayu-bulat-controller");
+const upload = require("../../core/utils/upload-image");
+const uploadVideo = require("../../core/utils/upload-video");
 
-const compressImage = require('../../core/utils/compress-image');
-const compressVideo = require('../../core/utils/compress-video');
+const compressImage = require("../../core/utils/compress-image");
+const compressVideo = require("../../core/utils/compress-video");
 
 const router = express.Router();
 
 // Endpoint RESTful
-router.get('/kayu-bulat', verifyToken, kayuBulatController.getAllKayuBulat);
-router.get('/kayu-bulat/:noKayuBulat', verifyToken, kayuBulatController.getKayuBulatById);
-router.post('/kayu-bulat', verifyToken, kayuBulatController.createKayuBulat);
-router.put('/kayu-bulat/:noKayuBulat', verifyToken, kayuBulatController.updateKayuBulat);
-router.delete('/kayu-bulat/:noKayuBulat', verifyToken, kayuBulatController.deleteKayuBulat);
+router.get("/kayu-bulat", verifyToken, kayuBulatController.getAllKayuBulat);
+router.get(
+  "/kayu-bulat/:noKayuBulat",
+  verifyToken,
+  kayuBulatController.getKayuBulatById,
+);
+router.post("/kayu-bulat", verifyToken, kayuBulatController.createKayuBulat);
+router.put(
+  "/kayu-bulat/:noKayuBulat",
+  verifyToken,
+  kayuBulatController.updateKayuBulat,
+);
+router.delete(
+  "/kayu-bulat/:noKayuBulat",
+  verifyToken,
+  kayuBulatController.deleteKayuBulat,
+);
 
 // Upload & compress image
 router.post(
-  '/kayu-bulat/:noKayuBulat/upload-image',
+  "/kayu-bulat/:noKayuBulat/upload-image",
   verifyToken,
-  upload.single('image'),
+  upload.single("image"),
   compressImage,
-  kayuBulatController.uploadImage
+  kayuBulatController.uploadImage,
 );
-
 
 // Upload video
 router.post(
-  '/kayu-bulat/:noKayuBulat/upload-video',
+  "/kayu-bulat/:noKayuBulat/upload-video",
   verifyToken,
-  uploadVideo.single('video'),
+  uploadVideo.single("video"),
   compressVideo,
-  kayuBulatController.uploadVideo
+  kayuBulatController.uploadVideo,
 );
-
 
 // Get attachments by NoKayuBulat
 router.get(
-  '/kayu-bulat/:noKayuBulat/attachments',
+  "/kayu-bulat/:noKayuBulat/attachments",
   verifyToken,
-  kayuBulatController.getAttachments
+  kayuBulatController.getAttachments,
 );
 
-
 // routes/kayu-bulat-routes.js
-router.get('/kayu-bulat/videos/:fileName', kayuBulatController.streamVideo);
-
+router.get("/kayu-bulat/videos/:fileName", kayuBulatController.streamVideo);
 
 // Update data image tanpa upload file
 router.put(
-  '/kayu-bulat/:noKayuBulat/update-image',
+  "/kayu-bulat/:noKayuBulat/update-image",
   verifyToken,
-  kayuBulatController.updateImageData
+  kayuBulatController.updateImageData,
 );
 
 // Update data video tanpa upload file
 router.put(
-  '/kayu-bulat/:noKayuBulat/update-video',
+  "/kayu-bulat/:noKayuBulat/update-video",
   verifyToken,
-  kayuBulatController.updateVideoData
+  kayuBulatController.updateVideoData,
 );
-
 
 // Hapus image by tier
 router.delete(
-  '/kayu-bulat/:noKayuBulat/delete-image/:tier',
+  "/kayu-bulat/:noKayuBulat/delete-image/:tier",
   verifyToken,
-  kayuBulatController.deleteImage
+  kayuBulatController.deleteImage,
 );
 
 // Hapus video by noUrut
 router.delete(
-  '/kayu-bulat/:noKayuBulat/delete-video/:noUrut',
+  "/kayu-bulat/:noKayuBulat/delete-video/:noUrut",
   verifyToken,
-  kayuBulatController.deleteVideo
+  kayuBulatController.deleteVideo,
 );
-
 
 module.exports = router;
