@@ -1,4 +1,4 @@
-name: Deploy to Server
+name: Deploy WPS Backend
 
 on:
   push:
@@ -13,16 +13,24 @@ jobs:
       APP_DIR: /opt/wps_backend
 
     steps:
-      - name: Pull latest code
-        shell: bash
-        working-directory: ${{ env.APP_DIR }}
-        run: git pull origin production
+      - name: Validate App Directory
+        run: |
+          if [ ! -d "$APP_DIR" ]; then
+            echo "Directory $APP_DIR not found!"
+            exit 1
+          fi
 
-      - name: Deploy with Docker
-        shell: bash
+      - name: Pull Latest Code
         working-directory: ${{ env.APP_DIR }}
-        run: docker compose up -d --build
+        run: |
+          git fetch origin
+          git reset --hard origin/production
+
+      - name: Deploy Docker
+        working-directory: ${{ env.APP_DIR }}
+        run: |
+          docker compose up -d --build
 
       - name: Cleanup Docker Images
-        shell: bash
-        run: docker image prune -f
+        run: |
+          docker image prune -af
