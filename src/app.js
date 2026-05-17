@@ -35,7 +35,7 @@ app.use(
 
 // Health check
 app.get("/health", (_req, res) => {
-  res.json({ status: "ok!!" });
+  res.json({ status: "ok!!!" });
 });
 
 // API routes
