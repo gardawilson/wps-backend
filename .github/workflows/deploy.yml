@@ -7,7 +7,7 @@ on:
 
 jobs:
   deploy:
-    runs-on: self-hosted
+    runs-on: [self-hosted, Linux, X64]
 
     env:
       APP_DIR: /opt/wps_backend
@@ -29,7 +29,11 @@ jobs:
       - name: Deploy Docker
         working-directory: ${{ env.APP_DIR }}
         run: |
-          docker compose up -d --build
+          docker compose up -d --build --remove-orphans
+
+      - name: Verify Container Running
+        run: |
+          docker ps | grep wps-backend
 
       - name: Cleanup Docker Images
         run: |
